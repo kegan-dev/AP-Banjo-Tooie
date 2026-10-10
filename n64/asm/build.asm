@@ -37,6 +37,7 @@ PAYLOAD_START:
 .align 0x10
 .importobj srcbundle
 .include "displaced.asm"
+.include "dualboot.asm"
 
 AP_ICON:
 .incbin assetsdir+"/ap-icon.btimg"

@@ -132,6 +132,7 @@ u32 inject_loop() {
   return ret;
 }
 
+#include "dualboot.h"
 u32 inject_hooks() {
   save_init();
   ap_memory_ptrs.version = AP_VERSION.as_int;
@@ -149,6 +150,7 @@ u32 inject_hooks() {
   ap_memory_ptrs.n64_saves_signposts = (u32)&ap_memory.n64.saves.signposts;
   ap_memory.pc.settings.dialog_character = 110;
   AP_MEMORY_PTR = &ap_memory_ptrs;
+  dualboot_boot_check();  // after the anchor is published so memory probes can attach
 
   // replace game's init function
   util_inject(UTIL_INJECT_FUNCTION, 0x800124F4, (u32)inject_init, 0);

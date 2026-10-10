@@ -7,6 +7,7 @@
 #include "exits.h"
 #include "custom_flags/all.h"
 #include "debug/debug.h"
+#include "dualboot.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -72,6 +73,7 @@ void post_draw_hud(bt_draw_ctx_t* draw_ctx) {
   ap_menu_draw(draw_ctx);
   if (bt_current_map == BT_MAP_TITLE_SCREEN) {
     if (bt_controllers[0].held.dup && bt_controllers[0].held.r && bt_controllers[0].pressed.start) BT_TITLE_SCREEN = 0x40;
+    if (bt_controllers[0].held.l && bt_controllers[0].held.r && bt_controllers[0].pressed.start) dualboot_request_bk(); // BKBT: L+R+Start -> Banjo-Kazooie
     char version[10] = "V";
     char major[3];
     char minor[3];
@@ -274,6 +276,9 @@ void pre_loop() {
 
 void post_loop() {
   debug_loop();
+#ifdef DUALBOOT_AUTOTEST
+  { static u32 title_frames = 0; if (bt_current_map == BT_MAP_TITLE_SCREEN && ++title_frames == 240) dualboot_request_bk(); }
+#endif
   if (BT_IN_GAME) ap_check();
   if (bt_current_map != ap_memory.n64.misc.current_map) {
     ap_memory.n64.misc.current_map = bt_current_map;
