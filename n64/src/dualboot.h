@@ -3,9 +3,8 @@
 
 #include "util.h"
 
-/* BKBT dual-boot: a relocated Banjo-Kazooie sits at this cart offset in the combined image.
-   Must match DUALBOOT_BK_BASE in asm/dualboot.asm and the --base given to tools/bk_relocate.py. */
-#define DUALBOOT_BK_BASE 0x02200000
+/* BKBT dual-boot: a relocated Banjo-Kazooie sits at a cart offset in the combined image. The offset is
+   DUALBOOT_BK_BASE in asm/dualboot.asm, the only copy in the hack. */
 
 /* Handoff block: survives a warm start (inside the payload window, never DMA'd over). */
 #define DUALBOOT_HANDOFF ((vu32*)0x805FFF00)
