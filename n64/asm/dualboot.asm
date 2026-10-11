@@ -9,30 +9,28 @@
 ; idle by themselves (emulators such as Project64 run RSP tasks on a timer *after* the game starts
 ; them, so forcibly halting the RSP leaves a task half-done), optionally mask/silence, DMA BK's boot
 ; segment over the first MiB like IPL3 would, recreate what BK's CIC-6103 IPL3 leaves in low RDRAM
-; (BK's anti-tamper reads it back), zero the rest of BK's 4 MiB, drop the caches, jump to BK's entry.
+; (BK's anti-tamper reads it back), zero the rest of BK's 4 MiB, load the Banjo-Kazooie payload (the
+; superproject's hack/bk) into Expansion Pak RAM, drop the caches, jump to BK's entry.
+; The way back is not here: the BK payload launches Tooie (hack/bk/asm/return.asm).
 ;
 ; armips matches `equ` names without regard to case: no label may be spelled like one of the toggles.
 
 DUALBOOT_BK_BASE equ 0x02200000
-; 0 = only wait for idle; 1 = also mask MI interrupts and stop audio; 2 = also blank video (v1 behaviour)
-QUIESCE_LEVEL equ 1
+; The Banjo-Kazooie payload follows the 16 MiB of BK in the image (tools/make_dualboot_image.py checks
+; this through the BKBTPAYL tag at the end of this file).
+DUALBOOT_BK_PAYLOAD equ (DUALBOOT_BK_BASE + 0x01000000)
+; what dualboot_quiesce.asm reads its 8-byte PI poke from
+QUIESCE_POKE_CART equ (0x10000000 + DUALBOOT_BK_BASE)
 ; 1 = write progress markers to 0x805FFF10 (stage) / 0x805FFF14 (spin counter) for memory probing
 DUALBOOT_TRACE equ 1
 ; diagnostic: run a one-instruction RSP program (break) before launching, to mimic a 6105 IPL3 having used the RSP
 DUALBOOT_RSPPOKE equ 0
-; 1 = after refreshing IMEM/DMEM by DMA, also run one `break` on the RSP and wait for it
-DUALBOOT_RSPRUN equ 1
-; 1 = write DPC_STATUS to clear xbus/freeze/flush
-DUALBOOT_DPCRESET equ 1
-; 1 = refill IMEM and DMEM by SP DMA (older variant; its scratch page 0x5FF000..0x5FFFFF covers the
-; handoff block and the trace words)
-DUALBOOT_SPDMA equ 0
-; 1 = the SP DMA refresh also covers DMEM (0 = IMEM only)
-DUALBOOT_SPDMA_DMEM equ 1
 ; 1 = recreate the CIC-6103 cold-boot residue in RDRAM 0x000..0x3FF (see the block before the jump)
 DUALBOOT_RESIDUE equ 1
 ; 1 = zero the rest of BK's 4 MiB, so BK starts on the RAM an emulator cold boot gives it, not Tooie's
 DUALBOOT_RAMCLEAR equ 1
+; 1 = load the Banjo-Kazooie payload when the image carries one
+DUALBOOT_BKPAYLOAD equ 1
 ; 1 = acknowledge the PI, DP, SI and AI interrupts before the jump, as the IPL3 does
 DUALBOOT_INTACK equ 1
 ; 1 = zero CP0 Cause, Count and Compare before the jump, as the IPL3 does at its entry
@@ -62,278 +60,9 @@ dualboot_launch_bk:
   ori   t2, zero, 0x0001
   sw    t2, 0x10(t1)            ; SP_STATUS: clear halt -> run
 .endif
-  ; Project64 runs a started RSP task only when it next processes an interrupt-type event, so a CPU
-  ; spinning on SP_STATUS with interrupts off would wait forever. A harmless 8-byte PI DMA into scratch
-  ; RAM gives it that event. The SP, DP and AI waits below are bounded (the SP one forces a halt on
-  ; timeout); the PI waits are not.
-  lui   t0, 0xA460
-  lui   t1, 0x005F
-  ori   t1, t1, 0xFE00          ; scratch: phys 0x5FFE00 (inside the payload window)
-  sw    t1, 0x00(t0)            ; PI_DRAM_ADDR
-  li    t2, 0x10000000 + DUALBOOT_BK_BASE
-  sw    t2, 0x04(t0)            ; PI_CART_ADDR
-  ori   t3, zero, 7
-  sw    t3, 0x0C(t0)            ; PI_WR_LEN = 8 - 1
-dualboot_pi_poke_wait:
-  lw    t4, 0x10(t0)
-  andi  t4, t4, 3
-  bnez  t4, dualboot_pi_poke_wait
+  jal   dualboot_quiesce
   nop
-  sw    t2, 0x10(t0)            ; PI_STATUS write (bit 1 clear, so it acknowledges nothing; see DUALBOOT_INTACK)
-  ; wait for the RSP to halt on its own (task done), bounded
-.if DUALBOOT_TRACE
-  lui   t9, 0xA060
-  ori   t8, zero, 1
-  sw    t8, -0xF0(t9)           ; stage -> 0xA05FFF10 (uncached)
-  sw    zero, -0xEC(t9)         ; counter -> 0xA05FFF14
-.endif
-  lui   t1, 0xA404
-  lui   t5, 0x0020              ; ~2M iterations timeout
-dualboot_sp_wait:
-.if DUALBOOT_TRACE
-  lui   t9, 0xA060
-  lw    t8, -0xEC(t9)
-  addiu t8, t8, 1
-  sw    t8, -0xEC(t9)
-.endif
-  lw    t4, 0x10(t1)            ; SP_STATUS
-  andi  t4, t4, 0x0001          ; HALT
-  bnez  t4, dualboot_sp_done
-  addiu t5, t5, -1
-  bnez  t5, dualboot_sp_wait
-  nop
-  ori   t4, zero, 0x0002
-  sw    t4, 0x10(t1)            ; timeout: force SP_STATUS halt
-dualboot_sp_done:
-  ; wait for the RDP to drain
-.if DUALBOOT_TRACE
-  lui   t9, 0xA060
-  ori   t8, zero, 2
-  sw    t8, -0xF0(t9)           ; stage -> 0xA05FFF10 (uncached)
-  sw    zero, -0xEC(t9)         ; counter -> 0xA05FFF14
-.endif
-  lui   t1, 0xA410
-  lui   t5, 0x0020
-dualboot_dp_wait:
-.if DUALBOOT_TRACE
-  lui   t9, 0xA060
-  lw    t8, -0xEC(t9)
-  addiu t8, t8, 1
-  sw    t8, -0xEC(t9)
-.endif
-  lw    t4, 0x0C(t1)            ; DPC_STATUS
-  andi  t4, t4, 0x0160          ; CMD busy | pipe busy | DMA busy
-  beqz  t4, dualboot_dp_done
-  addiu t5, t5, -1
-  bnez  t5, dualboot_dp_wait
-  nop
-dualboot_dp_done:
-  ; wait until the AI FIFO is no longer full (not until it is idle: a buffer may still be playing when
-  ; AI_CONTROL is cleared below; what a console does with the rest of it is untested)
-.if DUALBOOT_TRACE
-  lui   t9, 0xA060
-  ori   t8, zero, 3
-  sw    t8, -0xF0(t9)           ; stage -> 0xA05FFF10 (uncached)
-  sw    zero, -0xEC(t9)         ; counter -> 0xA05FFF14
-.endif
-  lui   t1, 0xA450
-  lui   t5, 0x0020
-dualboot_ai_wait:
-.if DUALBOOT_TRACE
-  lui   t9, 0xA060
-  lw    t8, -0xEC(t9)
-  addiu t8, t8, 1
-  sw    t8, -0xEC(t9)
-.endif
-  lw    t4, 0x0C(t1)            ; AI_STATUS
-  bgez  t4, dualboot_ai_done    ; bit 31 = FIFO full
-  addiu t5, t5, -1
-  bnez  t5, dualboot_ai_wait
-  nop
-dualboot_ai_done:
-  ; wait for any PI transfer the game started
-.if DUALBOOT_TRACE
-  lui   t9, 0xA060
-  ori   t8, zero, 4
-  sw    t8, -0xF0(t9)           ; stage -> 0xA05FFF10 (uncached)
-  sw    zero, -0xEC(t9)         ; counter -> 0xA05FFF14
-.endif
-  lui   t0, 0xA460
-dualboot_pi_wait0:
-.if DUALBOOT_TRACE
-  lui   t9, 0xA060
-  lw    t8, -0xEC(t9)
-  addiu t8, t8, 1
-  sw    t8, -0xEC(t9)
-.endif
-  lw    t4, 0x10(t0)
-  andi  t4, t4, 3
-  bnez  t4, dualboot_pi_wait0
-  nop
-.if QUIESCE_LEVEL >= 1
-  lui   t1, 0xA430
-  ori   t2, zero, 0x555
-  sw    t2, 0x0C(t1)            ; MI_INTR_MASK: clear SP/SI/AI/VI/PI/DP masks
-  lui   t1, 0xA450
-  sw    zero, 0x08(t1)          ; AI_CONTROL = 0
-.endif
-.if QUIESCE_LEVEL >= 2
-  lui   t1, 0xA440
-  sw    zero, 0x00(t1)          ; VI_CONTROL = 0
-.endif
-  ; Give BK a cold RSP/RDP. Tooie's CIC-6105 IPL3 ran an RSP program at boot, and Project64 3.0.1's RSP
-  ; recompiler crashed on BK's first task unless the RSP first halted through the plugin's own path.
-  ; Default (DUALBOOT_SPDMA=0): fill IMEM with `break` by CPU stores and run it once. DUALBOOT_SPDMA=1 is
-  ; the older variant that first refreshes IMEM (and DMEM) through SP DMA.
-  lui   t1, 0xA404
-  lui   t2, 0x00AA
-  ori   t2, t2, 0xAAAE          ; SP_STATUS: set HALT, clear BROKE/INTR/SSTEP/INTR_BREAK/SIG0..SIG7
-  sw    t2, 0x10(t1)
-  sw    zero, 0x1C(t1)          ; SP_SEMAPHORE release
-.if DUALBOOT_DPCRESET
-  lui   t1, 0xA410
-  ori   t2, zero, 0x03D5
-  sw    t2, 0x0C(t1)            ; DPC_STATUS: clear xbus/freeze/flush and counters
-.endif
-.if DUALBOOT_SPDMA
-  ; 4 KiB of `break` at uncached 0xA05FF000 (phys 0x5FF000, payload window)
-  lui   t1, 0xA060
-  addiu t1, t1, -0x1000
-  ori   t2, zero, 0x400
-  ori   t3, zero, 0x000D
-dualboot_fill_break:
-  sw    t3, 0(t1)
-  addiu t1, t1, 4
-  addiu t2, t2, -1
-  bnez  t2, dualboot_fill_break
-  nop
-  ; SP DMA RDRAM 0x5FF000 -> IMEM (0x1000) and -> DMEM (0x0000), 4 KiB each
-  lui   t1, 0xA404
-  lui   t4, 0x005F
-  ori   t4, t4, 0xF000
-  ori   t5, zero, 0x1000
-  sw    t5, 0x00(t1)            ; SP_MEM_ADDR = IMEM
-  sw    t4, 0x04(t1)            ; SP_DRAM_ADDR
-  ori   t5, zero, 0x0FFF
-  sw    t5, 0x08(t1)            ; SP_RD_LEN = 4 KiB - 1 (RDRAM -> SP mem)
-dualboot_spdma_wait0:
-  lw    t6, 0x10(t1)
-  andi  t6, t6, 0x000C          ; DMA busy | DMA full
-  bnez  t6, dualboot_spdma_wait0
-  nop
-  ; Project64 completes CPU-started SP DMAs only at its next event: poke the PI and re-check busy
-  lui   t0, 0xA460
-  lui   t6, 0x005F
-  ori   t6, t6, 0xFE00
-  sw    t6, 0x00(t0)
-  li    t6, 0x10000000 + DUALBOOT_BK_BASE
-  sw    t6, 0x04(t0)
-  ori   t6, zero, 7
-  sw    t6, 0x0C(t0)
-dualboot_flush0_pi:
-  lw    t6, 0x10(t0)
-  andi  t6, t6, 3
-  bnez  t6, dualboot_flush0_pi
-  nop
-  sw    t6, 0x10(t0)
-  lui   t5, 0x0020
-dualboot_flush0_sp:
-  lw    t6, 0x10(t1)
-  andi  t6, t6, 0x000C
-  beqz  t6, dualboot_flush0_done
-  addiu t5, t5, -1
-  bnez  t5, dualboot_flush0_sp
-  nop
-dualboot_flush0_done:
-.if DUALBOOT_SPDMA_DMEM
-  sw    zero, 0x00(t1)          ; SP_MEM_ADDR = DMEM
-  sw    t4, 0x04(t1)
-  ori   t5, zero, 0x0FFF
-  sw    t5, 0x08(t1)
-dualboot_spdma_wait1:
-  lw    t6, 0x10(t1)
-  andi  t6, t6, 0x000C
-  bnez  t6, dualboot_spdma_wait1
-  nop
-  ; Project64 completes CPU-started SP DMAs only at its next event: poke the PI and re-check busy
-  lui   t0, 0xA460
-  lui   t6, 0x005F
-  ori   t6, t6, 0xFE00
-  sw    t6, 0x00(t0)
-  li    t6, 0x10000000 + DUALBOOT_BK_BASE
-  sw    t6, 0x04(t0)
-  ori   t6, zero, 7
-  sw    t6, 0x0C(t0)
-dualboot_flush1_pi:
-  lw    t6, 0x10(t0)
-  andi  t6, t6, 3
-  bnez  t6, dualboot_flush1_pi
-  nop
-  sw    t6, 0x10(t0)
-  lui   t5, 0x0020
-dualboot_flush1_sp:
-  lw    t6, 0x10(t1)
-  andi  t6, t6, 0x000C
-  beqz  t6, dualboot_flush1_done
-  addiu t5, t5, -1
-  bnez  t5, dualboot_flush1_sp
-  nop
-dualboot_flush1_done:
-.endif
-.endif
-.if DUALBOOT_RSPRUN
-.if DUALBOOT_SPDMA == 0
-  ; fill ALL of IMEM with `break` by CPU stores, so wherever the recompiler's stale control state
-  ; resumes, it halts cleanly through the plugin's own path (no SP DMA involved)
-  lui   t1, 0xA400
-  ori   t1, t1, 0x1000
-  ori   t6, zero, 0x000D
-  ori   t2, zero, 0x400
-dualboot_imem_break:
-  sw    t6, 0(t1)
-  addiu t1, t1, 4
-  addiu t2, t2, -1
-  bnez  t2, dualboot_imem_break
-  nop
-  lui   t1, 0xA404
-.endif
-  ; run the RSP on `break` at PC 0 and let it halt itself
-  lui   t2, 0xA408
-  sw    zero, 0x00(t2)          ; SP_PC = 0
-  ori   t5, zero, 0x0105
-  sw    t5, 0x10(t1)            ; SP_STATUS: clear HALT, clear BROKE, SET_INTR_BREAK -> run; the break then ends the task the way the emulator expects
-  ; Project64 only runs it when it processes an event: poke the PI again (8-byte DMA)
-  lui   t0, 0xA460
-  lui   t4, 0x005F
-  ori   t4, t4, 0xFE00
-  sw    t4, 0x00(t0)
-  li    t4, 0x10000000 + DUALBOOT_BK_BASE
-  sw    t4, 0x04(t0)
-  ori   t4, zero, 7
-  sw    t4, 0x0C(t0)
-dualboot_pi_poke2_wait:
-  lw    t6, 0x10(t0)
-  andi  t6, t6, 3
-  bnez  t6, dualboot_pi_poke2_wait
-  nop
-  sw    t4, 0x10(t0)            ; PI_STATUS = 7: resets the (idle) PI controller and acknowledges its interrupt
-  lui   t5, 0x0020
-dualboot_sp_wait2:
-  lw    t6, 0x10(t1)
-  andi  t6, t6, 0x0001          ; HALT
-  bnez  t6, dualboot_sp_done2
-  addiu t5, t5, -1
-  bnez  t5, dualboot_sp_wait2
-  nop
-dualboot_sp_done2:
-.endif
-  lui   t1, 0xA404
-  lui   t2, 0x00AA
-  ori   t2, t2, 0xAAAE
-  sw    t2, 0x10(t1)            ; SP_STATUS: halt + clear everything again
-  sw    zero, 0x1C(t1)
-  lui   t2, 0xA408
-  sw    zero, 0x00(t2)          ; SP_PC = 0
+  lui   t0, 0xA460              ; PI base, used below
   ; Banjo-Kazooie's ucode_load (core1 ucode.c) only fetches its rspboot microcode from the ROM when
   ; DMEM[0] == 0xFFFFFFFF and IMEM[0] == 0x000017D7, the values the CIC-6103 IPL3 leaves behind on a
   ; cold boot. Without them the audio/gfx tasks run an all-zero boot ucode and the game parks on a
@@ -359,6 +88,12 @@ dualboot_flush:
   addiu t2, t2, -1
   bnez  t2, dualboot_flush
   nop
+  ; Count this launch (handoff block + 0x08, src/dualboot.h). Through KSEG1, and only now: the C side
+  ; wrote its words of the block through KSEG0, and the write-back above has just put that line in RAM.
+  lui   t9, 0xA060
+  lw    t8, -0xF8(t9)           ; 0xA05FFF08
+  addiu t8, t8, 1
+  sw    t8, -0xF8(t9)
   ; DMA BK's boot segment: cart (0x10000000 + BASE + 0x1000) -> RDRAM 0x00000400, 1 MiB + 4 bytes, the
   ; length the 6103 IPL3 asks for (a400050c: lui t2,0x10; addiu t2,t2,3)
   ori   t1, zero, 0x0400
@@ -468,6 +203,33 @@ dualboot_zero_ram:
   sw    t3, 0(t1)
   sw    t3, 4(t1)
 .endif
+.if DUALBOOT_BKPAYLOAD
+  ; The Banjo-Kazooie payload sits right behind BK in the image and starts with 'BKPL', its per-frame
+  ; handler, its load address and its length (hack/bk/README.md in the superproject). BK's main loop
+  ; calls the handler once the payload is in RAM (tools/bk_relocate.py puts that call in). It holds the
+  ; way back to Tooie. An image without a payload leaves BK as it was: no hook, no return.
+  li    t1, 0xB0000000 + DUALBOOT_BK_PAYLOAD
+  lw    t2, 0x00(t1)            ; PI is idle here, so the cart can be read directly
+  li    t3, 0x424B504C          ; 'BKPL'
+  bne   t2, t3, dualboot_payload_done
+  nop
+  lw    t4, 0x08(t1)            ; load address (KSEG0)
+  lw    t5, 0x0C(t1)            ; length in bytes
+  lui   t6, 0x1FFF
+  ori   t6, t6, 0xFFFF
+  and   t4, t4, t6
+  sw    t4, 0x00(t0)            ; PI_DRAM_ADDR
+  li    t2, 0x10000000 + DUALBOOT_BK_PAYLOAD
+  sw    t2, 0x04(t0)            ; PI_CART_ADDR
+  addiu t5, t5, -1
+  sw    t5, 0x0C(t0)            ; PI_WR_LEN
+dualboot_pi_wait3:
+  lw    t4, 0x10(t0)
+  andi  t4, t4, 3
+  bnez  t4, dualboot_pi_wait3
+  nop
+dualboot_payload_done:
+.endif
 .if DUALBOOT_INTACK
   ; 6103 IPL3 a40006a8..a40006cc. No PI DMA follows, so the PI interrupt stays acknowledged. VI is not
   ; acknowledged: it is still running in Tooie's mode and its interrupt is pending at the jump, until BK's
@@ -522,7 +284,13 @@ dualboot_inval:
   jr    t4                      ; BK entry
   nop
 
-; Read by tools/make_dualboot_image.py: the launcher, the relocated BK and the image must agree on BASE.
+.include "dualboot_quiesce.asm"
+
+; Read by tools/make_dualboot_image.py: the launcher, the relocated BK and the image must agree on BASE,
+; and the launcher and the image on where the Banjo-Kazooie payload is.
 dualboot_bk_base_tag:
 .ascii "BKBTBASE"
 .word DUALBOOT_BK_BASE
+dualboot_bk_payload_tag:
+.ascii "BKBTPAYL"
+.word DUALBOOT_BK_PAYLOAD

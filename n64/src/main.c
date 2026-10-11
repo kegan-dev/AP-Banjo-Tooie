@@ -277,7 +277,9 @@ void pre_loop() {
 void post_loop() {
   debug_loop();
 #ifdef DUALBOOT_AUTOTEST
-  { static u32 title_frames = 0; if (bt_current_map == BT_MAP_TITLE_SCREEN && ++title_frames == 240) dualboot_request_bk(); }
+  // title_frames restarts with every boot (the boot stub reloads the payload), so the launch counter in
+  // the handoff block is what stops an endless round trip
+  { static u32 title_frames = 0; if (bt_current_map == BT_MAP_TITLE_SCREEN && ++title_frames == 240 && DUALBOOT_BK_LAUNCHES < DUALBOOT_AUTOTEST_TRIPS) dualboot_request_bk(); }
 #endif
   if (BT_IN_GAME) ap_check();
   if (bt_current_map != ap_memory.n64.misc.current_map) {
