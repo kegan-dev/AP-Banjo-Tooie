@@ -73,7 +73,11 @@ void post_draw_hud(bt_draw_ctx_t* draw_ctx) {
   ap_menu_draw(draw_ctx);
   if (bt_current_map == BT_MAP_TITLE_SCREEN) {
     if (bt_controllers[0].held.dup && bt_controllers[0].held.r && bt_controllers[0].pressed.start) BT_TITLE_SCREEN = 0x40;
-    if (bt_controllers[0].held.l && bt_controllers[0].held.r && bt_controllers[0].pressed.start) dualboot_request_bk(); // BKBT: L+R+Start -> Banjo-Kazooie
+    // BKBT: L + R + Start -> Banjo-Kazooie. With all three down a real controller reports its reset bit
+    // instead of Start (bt/controllers.h; found on ares v148, 2026-10-11, where the test for start alone
+    // never fired), so either counts. The held bits, not the pressed ones: dualboot_title_chord does its
+    // own arming, because pressed is an edge against state that every boot empties (dualboot.c).
+    dualboot_title_chord(bt_controllers[0].held.l && bt_controllers[0].held.r && (bt_controllers[0].held.start || bt_controllers[0].held.reset));
     char version[10] = "V";
     char major[3];
     char minor[3];
