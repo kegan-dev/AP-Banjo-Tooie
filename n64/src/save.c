@@ -1,6 +1,12 @@
 #include "save.h"
 #include "dma.h"
 #include "bt.h"
+#include "dualboot.h"
+
+// BKBT: Banjo-Kazooie's save lies in the same SRAM, from DUALBOOT_BK_SRAM_OFFSET on (dualboot.h).
+// save_init and save_sram_write, this hack's only SRAM accesses, move sizeof(save_data) bytes from
+// offset 0, so this check is the whole guard. It compiles to nothing.
+_Static_assert(sizeof(save_data_t) <= DUALBOOT_BK_SRAM_OFFSET, "BT save data is too large and will cross into BK save data!");
 
 save_data_t save_data = {0,};
 u8 save_dirty = 0;

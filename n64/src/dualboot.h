@@ -55,6 +55,14 @@
 #define DUALBOOT_BK_COUNTDOWN (DUALBOOT_HANDOFF[10])
 #define DUALBOOT_BK_FLAGS_WORD (DUALBOOT_HANDOFF[11])
 
+/* The save device is shared too: the cartridge's 32 KiB of SRAM (cart address 0x08000000). This hack keeps
+   save_data at offset 0 (save.c). Banjo-Kazooie, when the launcher started it, keeps its 512 bytes of save
+   from this offset on, so this hack must never read, write or clear SRAM from here up; save.c stops the
+   build if save_data would reach it. The fork's copy of the number is bkbt_sram_offset in
+   hack/bk/decomp/manual_syms.us.v10.txt in the superproject, whose link stops below 0x7000. Nothing
+   compares the two: change both. */
+#define DUALBOOT_BK_SRAM_OFFSET 0x7000
+
 /* Test builds (EXTRA_CFLAGS, see hack/DUALBOOT.md in the superproject):
      -DDUALBOOT_AUTOTEST            switch to Banjo-Kazooie by itself from the title screen
      -DDUALBOOT_AUTOTEST_TRIPS=n    ... at most n times per cold boot (default 1)
