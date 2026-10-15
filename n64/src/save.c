@@ -8,8 +8,16 @@
 // offset 0, so this check is the whole guard. It compiles to nothing.
 _Static_assert(sizeof(save_data_t) <= DUALBOOT_BK_SRAM_OFFSET, "BT save data is too large and will cross into BK save data!");
 
-save_data_t save_data = {0,};
+// BKBT: Banjo-Tooie hack's save_data must be 0x10 aligned in memory so that it can
+// read and write from cartridge DMA (requires alignment 0x8) and so that it
+// does not share a cache line with other variables (requires alignment 0x10).
+// No emulator shows this issue.
+save_data_t save_data __attribute__ ((aligned (0x10))) = {0,};
 u8 save_dirty = 0;
+
+// This assertion guarantees save_data is 0x10 aligned. It prevents someone from
+// dropping the alignment attribute or setting it incorrectly.
+_Static_assert(__alignof__(save_data) % 0x10 == 0, "save_data is not 0x10 aligned in memory and shares a cache line with other variables!");
 
 void save_init() {
   const u32 size = sizeof(save_data);
