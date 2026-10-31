@@ -1204,7 +1204,9 @@ void post_load_data(u16 id, u32 addr) {
       char statues[3];  
       char targitzan_dialog[61];
       itoa(ap_memory.pc.settings.green_relics_chamber_requirement, statues, 10);
-      strcat(targitzan_dialog, statues);
+      // BKBT: strcpy, not strcat: the buffer is uninitialized, and strcat would append after whatever the
+      // stack held there (4.13.1 has strcat; worth offering upstream)
+      strcpy(targitzan_dialog, statues);
       strcat(targitzan_dialog, " STATUES GAINS YOU ENTRY TO MY SLIGHTLY SACRED CHAMBER...");
       strcpy((char*)text_start, targitzan_dialog);
       break;
@@ -1214,7 +1216,7 @@ void post_load_data(u16 id, u32 addr) {
       char statues[3];  
       char targitzan_dialog[62];
       itoa(ap_memory.pc.settings.green_relics_boss_requirement, statues, 10);
-      strcat(targitzan_dialog, statues);
+      strcpy(targitzan_dialog, statues);  // BKBT: strcpy, as above
       strcat(targitzan_dialog, " STATUES GAINS YOU ENTRY TO MY REALLY SACRED CHAMBER...");
       strcpy((char*)text_start, targitzan_dialog);
       break;
