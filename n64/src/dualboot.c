@@ -1,5 +1,6 @@
 #include "dualboot.h"
 #include "dma.h"
+#include "save.h"
 
 #ifdef DUALBOOT_AUTOTEST
 #define DUALBOOT_AUTOTEST_ON 1
@@ -48,6 +49,11 @@ extern const u32 dualboot_bk_base_word;
 // (dualboot_boot_check).
 static void dualboot_start_bk(u32 handoff) {
   if (io_read(0x10000000 + dualboot_bk_base_word) != DUALBOOT_ROM_HEADER) return;
+  // A save the game has made since the last main-loop iteration is still only in save_data (save_dirty;
+  // inject_loop writes it at the top of the next one, which never comes once Banjo-Kazooie runs, and the
+  // return reloads this payload). save_sram_write waits for its PI DMA (dma_write_raw_async). At boot,
+  // the relaunch's path here, save_dirty is still 0 and nothing is written.
+  if (save_dirty) save_sram_write();
   if (handoff) {
     DUALBOOT_HANDOFF[0] = DUALBOOT_MAGIC;
     DUALBOOT_HANDOFF[1] = DUALBOOT_GAME_KAZOOIE;
