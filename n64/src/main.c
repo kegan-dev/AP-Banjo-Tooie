@@ -1029,11 +1029,6 @@ void pre_object_init(bt_object_t *obj) {
       if (!ap_memory.pc.settings.randomize_tickets) break;
       util_inject(UTIL_INJECT_RAW     , (u32)obj + 0x0124, 0, 0);
       break;
-    case BT_OBJ_TEMPLEBOSSDOOR:
-      if (!ap_memory.pc.settings.randomize_green_relics) break;
-      util_inject(UTIL_INJECT_RAW     , (u32)obj + 0x009C, (0x24180000 | ap_memory.pc.settings.green_relics_boss_requirement), 0);
-      util_inject(UTIL_INJECT_RAW     , (u32)obj + 0x00A8, (0x240F0000 | ap_memory.pc.settings.green_relics_chamber_requirement), 0);
-      break;
     case BT_OBJ_JADESTATUE:
       if (!ap_memory.pc.settings.randomize_green_relics) break;
       util_inject(UTIL_INJECT_RAW     , (u32)obj + 0x00AC, 0, 0); // called to remove statues when enough flags are set when entering temple
@@ -1041,6 +1036,11 @@ void pre_object_init(bt_object_t *obj) {
       util_inject(UTIL_INJECT_RAW     , (u32)obj + 0x02E8, 0, 0); // called to open doors based on Saveflags.
       util_inject(UTIL_INJECT_RAW     , (u32)obj + 0x0274, 0, 0); // Updates UI when collecting a statue
       util_inject(UTIL_INJECT_RAW     , (u32)obj + 0x0354, 0, 0); // called to removes statues from the game when collected 20
+      break;
+    case BT_OBJ_TEMPLEBOSSDOOR:
+      if (!ap_memory.pc.settings.randomize_green_relics) break;
+      util_inject(UTIL_INJECT_RAW     , (u32)obj + 0x009C, (0x24180000 | ap_memory.pc.settings.green_relics_boss_requirement), 0);
+      util_inject(UTIL_INJECT_RAW     , (u32)obj + 0x00A8, (0x240F0000 | ap_memory.pc.settings.green_relics_chamber_requirement), 0);
       break;
     case BT_OBJ_TEMPLELOBBYDOOR:
     if (!ap_memory.pc.settings.randomize_green_relics) break;
@@ -1199,6 +1199,26 @@ void post_load_data(u16 id, u32 addr) {
       memcpy(data->draw_instructions.mine_eggs, draw_instructions, sizeof(draw_instructions));
       data->sprite_properties.mine_eggs.loc_size = 0x03C0;
       break;
+    case 0x0F3A: { // Slightly Secred Text debug: 8019F010
+      u32 text_start = addr + 0x1B; // Start of text
+      char statues[3];  
+      char targitzan_dialog[61];
+      itoa(ap_memory.pc.settings.green_relics_chamber_requirement, statues, 10);
+      strcat(targitzan_dialog, statues);
+      strcat(targitzan_dialog, " STATUES GAINS YOU ENTRY TO MY SLIGHTLY SACRED CHAMBER...");
+      strcpy((char*)text_start, targitzan_dialog);
+      break;
+    }
+    case 0xF3B: { // Very Slightly Sacred Text 
+      u32 text_start = addr + 0x23; // Start of text
+      char statues[3];  
+      char targitzan_dialog[62];
+      itoa(ap_memory.pc.settings.green_relics_boss_requirement, statues, 10);
+      strcat(targitzan_dialog, statues);
+      strcat(targitzan_dialog, " STATUES GAINS YOU ENTRY TO MY REALLY SACRED CHAMBER...");
+      strcpy((char*)text_start, targitzan_dialog);
+      break;
+    }
   }
 }
 

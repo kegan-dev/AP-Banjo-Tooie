@@ -14,8 +14,7 @@ BTClient::BTClient(asio::io_context* io_context):
   socket_(*io_context),
   timer_receive(*io_context)/*,
   timer_other(io_context) */ {
-  CPP_VERSION = std::to_string(AP_VERSION.major)+"."+std::to_string(AP_VERSION.minor);
-  if (AP_VERSION.patch) CPP_VERSION += "."+std::to_string(AP_VERSION.patch);
+  CPP_VERSION = std::to_string(AP_VERSION.major)+"."+std::to_string(AP_VERSION.minor)+"."+std::to_string(AP_VERSION.patch);
   this->io_context = io_context;
   printf("Starting server on port: %u\n", BT_CLIENT_PORT);
   tcp::endpoint endpoint(tcp::v4(), BT_CLIENT_PORT);
@@ -1877,6 +1876,34 @@ void BTClient::show_message(int character, json data, bool force) {
             message.text = own ? std::format("You can now use the {}.", item)
                                : std::format("{} has just unlocked the {}.", player, item);
             break;
+        case 1230923: // Green Relic
+            default_character = BT_ZOOMBOX_ICON_TARGITZAN;
+            if (ENABLE_AP_GRRELICS && ap_memory.n64.misc.current_map != 376)
+            {
+                if(ap_memory.pc.items[AP_ITEM_GRRELIC] == AP_GRRELICS_CHAMBER) {
+                    if (character == 110 || character == BT_ZOOMBOX_ICON_TARGITZAN) {
+                        if(AP_GRRELICS_CHAMBER == 1)
+                        {
+                            message.text = std::format("Good Job Mortal. {} statue gain you entry to my Slightly Sacred Chamber...", AP_GRRELICS_CHAMBER);
+                        }
+                        else
+                        {
+                            message.text = std::format("Good Job Mortal. {} statues gain you entry to my Slightly Sacred Chamber...", AP_GRRELICS_CHAMBER);
+                        }
+                    } else {
+                        message.text = std::format("Targitzans Slightly Sacred Chamber is now open...");
+                    }
+                    break;
+                } else if (ap_memory.pc.items[AP_ITEM_GRRELIC] == AP_GRRELICS_BOSS) {
+                    if (character == 110 || character == BT_ZOOMBOX_ICON_TARGITZAN) {
+                        message.text = std::format("Good Job Mortal. {} statues gain you entry to my Really Sacred Chamber...", AP_GRRELICS_BOSS);
+                    } else {
+                        message.text = std::format("Targitzans Really Sacred Chamber is now open... Lets egg em!");
+                    }
+                    break;
+                }
+            }
+            return;
         default: return;
     }
     if (item_id >= 1230944 && item_id <= 1230952) {
@@ -2048,7 +2075,7 @@ asio::awaitable<void> BTClient::getSlotData()
     }
     if(block.contains(string{"slot_green_relics_boss_requirement"}))
     {
-        AP_GRRELICS_BOSS = block["slot_green_relics_boss_requirement"]
+        AP_GRRELICS_BOSS = block["slot_green_relics_boss_requirement"];
         if(DEBUG_NET == true) { std::cout << "Green Relics Boss Requirement is set to" << AP_GRRELICS_BOSS << std::endl; }
     }
     if(block.contains(string{"slot_randomize_beans"}) && block["slot_randomize_beans"] != 0)
