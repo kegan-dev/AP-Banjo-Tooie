@@ -2,7 +2,9 @@
 #include "dma.h"
 #include "save.h"
 
-#ifdef DUALBOOT_AUTOTEST
+#if defined(DUALBOOT_DOOR_TEST)
+#define DUALBOOT_AUTOTEST_ON 2
+#elif defined(DUALBOOT_AUTOTEST)
 #define DUALBOOT_AUTOTEST_ON 1
 #else
 #define DUALBOOT_AUTOTEST_ON 0
@@ -19,7 +21,7 @@
 // no string literal can put a second copy of it into the ROM.
 const struct {
   char tag[8];
-  u32 autotest;   // 1 = built with -DDUALBOOT_AUTOTEST
+  u32 autotest;   // 1 = built with -DDUALBOOT_AUTOTEST, 2 = with -DDUALBOOT_DOOR_TEST
   u32 trips;      // DUALBOOT_AUTOTEST_TRIPS
   u32 bk_return;  // DUALBOOT_AUTOTEST_RETURN
   u32 contract;   // DUALBOOT_CONTRACT, the C copy
@@ -46,9 +48,14 @@ extern const u32 dualboot_bk_base_word;
 // path only a test reaches.
 // Returns only when there is no Banjo-Kazooie, and then has stored nothing: no handoff is pending.
 // `handoff` records the launch first, so that a reset inside Banjo-Kazooie comes back to it
-// (dualboot_boot_check).
-static void dualboot_start_bk(u32 handoff) {
-  if (io_read(0x10000000 + dualboot_bk_base_word) != DUALBOOT_ROM_HEADER) return;
+// (dualboot_boot_check). `dest_map` is where Banjo-Kazooie is to arrive, in its numbering, with
+// `dest_exit`; 0 for none.
+u32 dualboot_bk_present(void) {
+  return io_read(0x10000000 + dualboot_bk_base_word) == DUALBOOT_ROM_HEADER;
+}
+
+static void dualboot_start_bk(u32 handoff, u32 dest_map, u32 dest_exit) {
+  if (!dualboot_bk_present()) return;
   // A save the game has made since the last main-loop iteration is still only in save_data (save_dirty;
   // inject_loop writes it at the top of the next one, which never comes once Banjo-Kazooie runs, and the
   // return reloads this payload). save_sram_write waits for its PI DMA (dma_write_raw_async). At boot,
@@ -62,23 +69,48 @@ static void dualboot_start_bk(u32 handoff) {
   // adds its own words through KSEG1 (the token and the payload address share a cache line with these two)
   DUALBOOT_BK_COUNTDOWN = DUALBOOT_AUTOTEST_RETURN;
   DUALBOOT_BK_FLAGS_WORD = DUALBOOT_BK_FLAGS;
+  // The destination, on every launch, through KSEG1 (dualboot.h: the trace's cache line)
+  DUALBOOT_DEST_MAP = dest_map ? DUALBOOT_DEST_TAG | dest_map : 0;
+  DUALBOOT_DEST_EXIT = dest_map ? dest_exit : 0;
   dualboot_launch_bk();
 }
 
+u8 dualboot_arrival = 0;
+u16 dualboot_arrival_map = 0;
+u16 dualboot_arrival_exit = 0;
+
 void dualboot_boot_check(void) {
   u32 pending = DUALBOOT_HANDOFF[0] == DUALBOOT_MAGIC;
+  // The destination is read once and zeroed, believed only with the magic and only for this game
+  u32 dest_map = DUALBOOT_DEST_MAP;
+  u32 dest_exit = DUALBOOT_DEST_EXIT;
+  DUALBOOT_DEST_MAP = 0;
+  DUALBOOT_DEST_EXIT = 0;
   if (!pending) {  // cold boot, or a reset with nothing pending: the counters start again
     DUALBOOT_BK_LAUNCHES = 0;
     DUALBOOT_BT_LAUNCHES = 0;
+#ifdef DUALBOOT_DOOR_TEST
+    // test build: the first boot arrives as if through the door (door.c)
+    dualboot_arrival = 1;
+    dualboot_arrival_map = BT_MAP_SM;
+    dualboot_arrival_exit = DUALBOOT_DOOR_TOOIE_EXIT;
+#endif
   }
 #ifdef DUALBOOT_BOOT_BK
-  dualboot_start_bk(0);  // test build: go straight to BK at cold boot
+  dualboot_start_bk(0, 0, 0);  // test build: go straight to BK at cold boot
 #endif
   if (!pending) return;
   DUALBOOT_HANDOFF[0] = 0;  // one-shot: the next cold boot is Tooie again
-  // DUALBOOT_GAME_TOOIE: Banjo-Kazooie sent us back, nothing more to do than boot
-  if (DUALBOOT_HANDOFF[1] != DUALBOOT_GAME_KAZOOIE) return;
-  dualboot_start_bk(0);  // a reset inside Banjo-Kazooie
+  // DUALBOOT_GAME_TOOIE: Banjo-Kazooie sent us back, with somewhere to arrive at or not
+  if (DUALBOOT_HANDOFF[1] != DUALBOOT_GAME_KAZOOIE) {
+    if ((dest_map & 0xFFFF0000) == DUALBOOT_DEST_TAG) {
+      dualboot_arrival = 1;
+      dualboot_arrival_map = dest_map & 0xFFFF;
+      dualboot_arrival_exit = dest_exit;
+    }
+    return;
+  }
+  dualboot_start_bk(0, 0, 0);  // a reset inside Banjo-Kazooie
   // Still here: the block asked for a Banjo-Kazooie that this ROM does not have (RAM left by another
   // image, the block is above everything a reset clears). The magic is gone; the game word follows, so
   // that the block reads as it does after a return from Banjo-Kazooie and names the game that runs.
@@ -86,7 +118,11 @@ void dualboot_boot_check(void) {
 }
 
 void dualboot_request_bk(void) {
-  dualboot_start_bk(1);
+  dualboot_start_bk(1, 0, 0);
+}
+
+void dualboot_request_bk_to(u32 map, u32 exit) {
+  dualboot_start_bk(1, map, exit);
 }
 
 // Whether the title-screen chord may switch (dualboot_title_chord). Zero at every Tooie boot: the boot

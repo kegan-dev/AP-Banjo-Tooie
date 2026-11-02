@@ -14,7 +14,7 @@
    refuses a ROM in which it differs from the tag. Change both. The Banjo-Kazooie payload (its header,
    hack/bk/asm/payload.asm in the superproject) and the Banjo-Kazooie fork (bkbt_contract,
    hack/bk/decomp in the superproject) carry the number too, and the same tool compares those. */
-#define DUALBOOT_CONTRACT 2
+#define DUALBOOT_CONTRACT 3
 
 /* Handoff block: survives a warm start in either direction (top of the payload window, never DMA'd
    over, above everything Banjo-Kazooie uses). The Banjo-Kazooie side of it is
@@ -28,16 +28,20 @@
    its own words of those two cache lines (the launch counter, the token, the payload address) through
    KSEG1. The trace words +0x10 and +0x14 are not handled that way: the quiesce and the launcher write
    them uncached from their first instructions on, before the write-back. A C store through KSEG0 into
-   that cache line (+0x10..+0x1C, which includes the reserved destination words) would leave the line
-   dirty with the trace of an older launch in it, and the write-back would put that over the trace
-   written so far. So C must not store there through KSEG0; whoever brings the destination words into
-   use stores them through KSEG1.
+   that cache line (+0x10..+0x1C, which includes the destination words) would leave the line dirty with
+   the trace of an older launch in it, and the write-back would put that over the trace written so far.
+   So C must not store there through KSEG0: it reads and writes the destination words through KSEG1
+   only (DUALBOOT_HANDOFF_UNCACHED), as BK does.
      +0x00  magic 'BKBT' while a handoff is pending
      +0x04  game to start (DUALBOOT_GAME_*)
      +0x08  Banjo-Kazooie launches since the last cold boot (asm/dualboot.asm counts)
      +0x0C  Tooie launches from Banjo-Kazooie since the last cold boot (the BK payload counts)
      +0x10  launcher trace: stage      +0x14  launcher trace: spin counter
-     +0x18  reserved: destination map  +0x1C  reserved: destination exit
+     +0x18  destination (contract 3): DUALBOOT_DEST_TAG | the map to arrive at in the game started, in
+            that game's numbering; 0 for none (the chord, the autotest, the relaunch). The C of the game
+            being left writes it, through KSEG1, on every launch; the game started reads it and zeroes it
+            at boot, and believes it only with its proof of a launch (Tooie: the magic; BK: the token)
+     +0x1C  destination's entrance, with +0x18 (0 with no destination)
      +0x20  launch token (DUALBOOT_TOKEN in asm/dualboot.asm, which writes it on every launch of
             Banjo-Kazooie); BK's bkbt_init takes it as proof that the launcher has just started it, and
             zeroes it. C never touches it
@@ -54,6 +58,20 @@
 #define DUALBOOT_BT_LAUNCHES (DUALBOOT_HANDOFF[3])
 #define DUALBOOT_BK_COUNTDOWN (DUALBOOT_HANDOFF[10])
 #define DUALBOOT_BK_FLAGS_WORD (DUALBOOT_HANDOFF[11])
+/* The destination words, through KSEG1 only (above) */
+#define DUALBOOT_HANDOFF_UNCACHED ((vu32*)0xA05FFF00)
+#define DUALBOOT_DEST_MAP (DUALBOOT_HANDOFF_UNCACHED[6])
+#define DUALBOOT_DEST_EXIT (DUALBOOT_HANDOFF_UNCACHED[7])
+#define DUALBOOT_DEST_TAG 0x44530000 /* 'DS' in the high half; the map in the low */
+
+/* The hub door (docs/ROADMAP.md in the superproject, "The way there", step 2): Spiral Mountain's entrance to
+   the ruined Lair (BT_MAP_SM -> 0x0AD) leads into Banjo-Kazooie's Lair, MAP_69_GL_MM_LOBBY at
+   WARP_GL_MM_LOBBY_12_ENTRANCE (the fork's include/enums.h), and BK's Lair exit back to Spiral Mountain at
+   the entrance out of the ruined Lair, exit 2 (the game asks (0x0AF, 2) when Banjo walks out of 0x0AD:
+   mupen64plus, 2026-10-31; he then walks in by himself and stands at (0, 1784, -3520)). door.c. */
+#define DUALBOOT_DOOR_BK_MAP 0x69
+#define DUALBOOT_DOOR_BK_EXIT 0x12
+#define DUALBOOT_DOOR_TOOIE_EXIT 2
 
 /* The save device is shared too: the cartridge's 32 KiB of SRAM (cart address 0x08000000). This hack keeps
    save_data at offset 0 (save.c). Banjo-Kazooie, when the launcher started it, keeps its 512 bytes of save
@@ -68,7 +86,13 @@
      -DDUALBOOT_AUTOTEST_TRIPS=n    ... at most n times per cold boot (default 1)
      -DDUALBOOT_AUTOTEST_RETURN=n   Banjo-Kazooie returns by itself after n main-loop iterations
      -DDUALBOOT_BK_FLAGS=n          the flags word handed to Banjo-Kazooie (default 0)
-   The first three are published in the ROM for the tools (the BKBTAUTO record in dualboot.c). */
+     -DDUALBOOT_DOOR_TEST=n         the hub door without a player (door.c): the first boot arrives as if
+                                    through the door, and n frames after Banjo is in Spiral Mountain the
+                                    game is sent through it; with DUALBOOT_BK_FLAGS bit 1 BK takes its
+                                    Lair exit DUALBOOT_AUTOTEST_RETURN iterations after it is in the Lair;
+                                    at most DUALBOOT_AUTOTEST_TRIPS trips per cold boot
+   The first three are published in the ROM for the tools (the BKBTAUTO record in dualboot.c; a door test
+   build says autotest 2). */
 #ifndef DUALBOOT_AUTOTEST_TRIPS
 #define DUALBOOT_AUTOTEST_TRIPS 1
 #endif
@@ -79,11 +103,24 @@
 #define DUALBOOT_BK_FLAGS 0
 #endif
 
-/* Each of the three C entries starts Banjo-Kazooie only if one is there (dualboot.c, dualboot_start_bk);
-   in the hack ROM run by itself they do nothing. */
+/* Each of the C entries that start Banjo-Kazooie does so only if one is there (dualboot.c,
+   dualboot_start_bk); in the hack ROM run by itself they do nothing. */
 void dualboot_launch_bk(void);       /* asm/dualboot.asm, never returns; dualboot.c is its only caller */
 void dualboot_boot_check(void);      /* at payload start: honour a pending handoff */
 void dualboot_request_bk(void);      /* record the handoff and switch now */
+void dualboot_request_bk_to(u32 map, u32 exit); /* ... arriving at (map, exit) in Banjo-Kazooie */
+u32 dualboot_bk_present(void);       /* is there a Banjo-Kazooie at its cart offset? */
 void dualboot_title_chord(u32 down); /* every title-screen frame: is L + R + Start down on pad 0? */
+/* The arrival this boot came with (dualboot_boot_check): 1 and its map and entrance in Tooie's numbering,
+   or 0. Zero again at every boot (the boot stub reloads the payload's data). */
+extern u8 dualboot_arrival;
+extern u16 dualboot_arrival_map;
+extern u16 dualboot_arrival_exit;
+
+/* The hub door's code (door.c). */
+void door_pre_load_scene(u16* scene, u16* exit); /* the first thing pre_load_scene does */
+void door_arrival_scene(u16* scene, u16* exit);  /* the last thing pre_load_scene does */
+void door_pad(void);                             /* check_tiptoe, before the game polls the pads */
+void door_loop(void);                            /* post_loop */
 
 #endif

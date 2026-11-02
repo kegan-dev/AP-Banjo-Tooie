@@ -60,6 +60,11 @@ typedef struct {
     u8 automatic_cheats;
     u8 easy_canary;
     u8 jiggy_requirements[11];
+    // BKBT: the hub door (n64/src/door.c): not 0 = Spiral Mountain's entrance to the ruined Lair leads into
+    // Banjo-Kazooie's Lair. In the padding byte before silo_requirements (+0x25, which nothing else moves),
+    // written only by the combined Banjo-Kazooie & Tooie client: the stock client leaves it 0, so a Tooie
+    // slot keeps its ruined Lair and Cheato's rewards.
+    u8 hub_door;
     u16 silo_requirements[24];
     u8 green_relics_chamber_requirement;
     u8 green_relics_boss_requirement;

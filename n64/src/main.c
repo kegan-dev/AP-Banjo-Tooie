@@ -259,6 +259,7 @@ void post_spawn_prop(u16 id, bt_s32_xyz_t* pos, u32 yrot, bt_obj_setup_t* setup,
 
 bool check_tiptoe()
 {
+  door_pad();  // BKBT: the hub door's file choice presses through the pad word the poll reads (door.c)
   bool controls_polled = bt_fn_poll_controls();
   if(bt_controllers[0].held.dup > 0 && controls_polled)
   {
@@ -285,6 +286,7 @@ void post_loop() {
   // the handoff block is what stops an endless round trip
   { static u32 title_frames = 0; if (bt_current_map == BT_MAP_TITLE_SCREEN && ++title_frames == 240 && DUALBOOT_BK_LAUNCHES < DUALBOOT_AUTOTEST_TRIPS) dualboot_request_bk(); }
 #endif
+  door_loop();  // BKBT: the hub door (door.c)
   if (BT_IN_GAME) ap_check();
   if (bt_current_map != ap_memory.n64.misc.current_map) {
     ap_memory.n64.misc.current_map = bt_current_map;
@@ -370,6 +372,7 @@ void main_visited_world(u16 scene, u16 exit) {
 
 void pre_load_scene(u16 *scene, u16 *exit) {
   debug_load_scene(scene, exit);
+  door_pre_load_scene(scene, exit);  // BKBT: the hub door (door.c), before anything sees where the load goes
   main.setup_cache_count = 0;
   if (!BT_IN_GAME && bt_current_map != BT_MAP_FILE_SELECT) {
     if (*scene == BT_MAP_FILE_SELECT) {
@@ -514,6 +517,9 @@ void pre_load_scene(u16 *scene, u16 *exit) {
       if (bt_player_chars.control_type == BT_PLAYER_CHAR_BANJO_KAZOOIE) bt_fake_flags.ccl_humba = 1;
       break;
   }
+  // BKBT: an arrival through the hub door goes where it arrives, whatever the file select asked for (door.c);
+  // last, so that the cases above (a new file's main.new_file) have run
+  door_arrival_scene(scene, exit);
 }
 
 void post_load_scene(u16 scene, u16 exit) {
