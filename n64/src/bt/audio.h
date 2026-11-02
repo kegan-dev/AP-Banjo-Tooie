@@ -4,6 +4,14 @@
 typedef u32 (*bt_fnt_play_sound)(u16 id, s64 volume, u16 _unknown, s32 _unknown2);
 #define bt_fn_play_sound ((bt_fnt_play_sound)0x800FC508)
 
+// BKBT: libultra's osAiSetNextBuffer(buffer, bytes), which hands the audio interface its next buffer
+// (it writes AI_DRAM_ADDR and AI_LEN, 0xA4500000 and 0xA4500004), and the game's only call of it, in its
+// audio thread (`jal 0x8002E3C0`, delay slot `move a1, t6`). Found in RAM on mupen64plus at the title
+// screen, 2026-11-02 (the superproject's hack/DUALBOOT.md, "The hub door"). door.c's curtain hooks the call.
+typedef s32 (*bt_fnt_ai_set_next_buffer)(void* buffer, u32 bytes);
+#define bt_fn_ai_set_next_buffer ((bt_fnt_ai_set_next_buffer)0x8002E3C0)
+#define BT_AI_SET_NEXT_BUFFER_CALL 0x80012A4C
+
 enum {
   BT_SOUND_COLLECTED_ITEM1,
   BT_SOUND_COLLECTED_NOTE,

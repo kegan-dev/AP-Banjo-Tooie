@@ -32,6 +32,15 @@ typedef struct {
 typedef u32 (*bt_fnt_load_scene)(u16 mapId, u16 entranceId, u8 animate);
 #define bt_fn_load_scene ((bt_fnt_load_scene)0x800A7990)
 
+// BKBT: the load that reads the session's file first (bt/misc_functions.h, the session), the one a file select
+// starts a game with. Like bt_fn_load_scene, but its request (0x800A79D4) sets the load request's +0x16
+// (0x80127646), which the deferred load hands the load-scene function (0x800A72A4, inject_load_scene's
+// fourth argument); only with it does that function call the save's loader (0x800A731C, inject_load_save).
+// Called once in the game, by the gcfrontend overlay's start of a game (0x801EB51C, with animate 1). Found in
+// RAM on mupen64plus with the file select up, 2026-11-02 (the superproject's hack/DUALBOOT.md, "The hub door").
+typedef void (*bt_fnt_load_scene_with_save)(u16 mapId, u16 entranceId, u8 animate);
+#define bt_fn_load_scene_with_save ((bt_fnt_load_scene_with_save)0x800A791C)
+
 typedef void (*bt_fnt_load_scene_ccl_bubble)(u16 mapId, u16 entranceId);
 #define bt_fn_load_scene_ccl_bubble ((bt_fnt_load_scene_ccl_bubble)0x80087A58)
 

@@ -30,6 +30,11 @@ void save_init() {
     save_data.magic = SAVE_MAGIC;
     save_sram_write();
   }
+  // BKBT: a save of a build before the links has the SRAM's fill where link[] is now, 0xFF bytes on
+  // mupen64plus (the superproject's tools/sra_tool.py): no link
+  for (int i = 0; i < 3; i++) {
+    if (save_data.link[i] == 0xFFFFFFFF) save_data.link[i] = 0;
+  }
 }
 
 void save_sram_write() {

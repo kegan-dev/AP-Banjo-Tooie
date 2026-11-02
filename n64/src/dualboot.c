@@ -72,20 +72,29 @@ static void dualboot_start_bk(u32 handoff, u32 dest_map, u32 dest_exit) {
   // The destination, on every launch, through KSEG1 (dualboot.h: the trace's cache line)
   DUALBOOT_DEST_MAP = dest_map ? DUALBOOT_DEST_TAG | dest_map : 0;
   DUALBOOT_DEST_EXIT = dest_map ? dest_exit : 0;
+  // The links (contract 4), through KSEG1 too: with a destination, the file at the door (door.c gave it one)
+  // and the three files', so that Banjo-Kazooie can tell which of its saves no file holds any more
+  DUALBOOT_LINK = dest_map && bt_save_slot <= 2 ? save_data.link[bt_save_slot] : 0;
+  for (int i = 0; i < 3; i++) DUALBOOT_FILE_LINK(i) = dest_map ? save_data.link[i] : 0;
   dualboot_launch_bk();
 }
 
 u8 dualboot_arrival = 0;
 u16 dualboot_arrival_map = 0;
 u16 dualboot_arrival_exit = 0;
+u32 dualboot_arrival_link = 0;
 
 void dualboot_boot_check(void) {
   u32 pending = DUALBOOT_HANDOFF[0] == DUALBOOT_MAGIC;
-  // The destination is read once and zeroed, believed only with the magic and only for this game
+  // The destination and the links are read once and zeroed, believed only with the magic and only for
+  // this game
   u32 dest_map = DUALBOOT_DEST_MAP;
   u32 dest_exit = DUALBOOT_DEST_EXIT;
+  u32 link = DUALBOOT_LINK;
   DUALBOOT_DEST_MAP = 0;
   DUALBOOT_DEST_EXIT = 0;
+  DUALBOOT_LINK = 0;
+  for (int i = 0; i < 3; i++) DUALBOOT_FILE_LINK(i) = 0;
   if (!pending) {  // cold boot, or a reset with nothing pending: the counters start again
     DUALBOOT_BK_LAUNCHES = 0;
     DUALBOOT_BT_LAUNCHES = 0;
@@ -107,6 +116,7 @@ void dualboot_boot_check(void) {
       dualboot_arrival = 1;
       dualboot_arrival_map = dest_map & 0xFFFF;
       dualboot_arrival_exit = dest_exit;
+      dualboot_arrival_link = link;
     }
     return;
   }

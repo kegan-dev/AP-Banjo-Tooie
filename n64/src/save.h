@@ -36,6 +36,11 @@ typedef struct Save_Data_s {
     u8 feather_nests;
     u8 health_upgrades;
   } custom[3];
+  // BKBT: each file's link to its Banjo-Kazooie save (the hub door, door.c; dual-boot contract 4): a random
+  // number, never 0 or 0xFFFFFFFF, made when the file first goes through the door, 0 for none. Appended
+  // after custom[] so that custom[] keeps its offsets in the saves of earlier builds, which read the SRAM's
+  // fill here (save_init). The file select's erase and copy clear it (main.c).
+  u32 link[3];
 } save_data_t;
 
 extern save_data_t save_data;

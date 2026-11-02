@@ -32,6 +32,13 @@ SW AT, 0x0014 (SP)
 J 0x80087B80
 SW R0, 0x0018 (SP)
 
+; BKBT: osViBlack's first two instructions (bt/misc_functions.h, BT_OS_VI_BLACK), replaced by door.c's jump
+.align 0x08
+door_vi_black_displaced:
+ADDIU SP, SP, -0x18
+J 0x8002FBB8
+SW RA, 0x0014 (SP)
+
 .align 0x08
 inject_load_scene_displaced:
 ADDIU SP, SP, -0x20

@@ -370,29 +370,40 @@ void main_visited_world(u16 scene, u16 exit) {
   }
 }
 
+// The title is left for good: the version that lets Start skip the title from the next boot on (post_init),
+// and the title's credits freed
+static void main_leave_title() {
+  save_data.version = AP_VERSION.as_int;
+  save_dirty = 1;
+  for (int i = 0; i < 2; i++) {
+    bt_zoombox_t* zb = main.zb_credits[i];
+    if (!zb) continue;
+    bt_fn_zoombox_free(zb);
+    main.zb_credits[i] = 0;
+  }
+}
+
 void pre_load_scene(u16 *scene, u16 *exit) {
   debug_load_scene(scene, exit);
-  door_pre_load_scene(scene, exit);  // BKBT: the hub door (door.c), before anything sees where the load goes
+  // BKBT: the hub door (door.c), before anything sees where the load goes. A door arrival's load straight from
+  // the title (door_direct_load) chooses its file here, so that from now on the load is one of a file in play
+  door_pre_load_scene(scene, exit);
   main.setup_cache_count = 0;
   if (!BT_IN_GAME && bt_current_map != BT_MAP_FILE_SELECT) {
-    if (*scene == BT_MAP_FILE_SELECT) {
-      save_data.version = AP_VERSION.as_int;
-      save_dirty = 1;
-      for (int i = 0; i < 2; i++) {
-        bt_zoombox_t* zb = main.zb_credits[i];
-        if (!zb) continue;
-        bt_fn_zoombox_free(zb);
-        main.zb_credits[i] = 0;
-      }
-    }
+    if (*scene == BT_MAP_FILE_SELECT) main_leave_title();
     return;
   }
+  // BKBT: a door arrival's load straight from the title leaves it as the way to the file select above does
+  if (door_direct_load() && bt_current_map == BT_MAP_TITLE_SCREEN) main_leave_title();
   bt_temp_flags.bubble_cutscene = 0;
   bt_flags.ccl_open = ap_memory.pc.items[AP_ITEM_CCA] > 0;
   if (bt_flags.ck_opened_gun_chamber) bt_flags.tower_of_tragedy_completed = 0;
   main_visited_world(*scene, *exit);
   switch (*scene) {
     case BT_MAP_CUTSCENE_OPENING:
+      // a new file: the file select asks for the opening. BKBT: a door arrival's direct load asks for the
+      // arrival and knows a new file after the load instead (door_direct_new_file in post_load_save): keep
+      // the two in step
       main.new_file = 1;
       *scene = BT_MAP_SM;
       *exit = 0x0004;
@@ -567,6 +578,10 @@ void pre_load_save() {
 
 void post_load_save() {
   if (!BT_IN_GAME && bt_current_map != BT_MAP_FILE_SELECT) return;
+  // BKBT: a door arrival's direct load from the title (door.c) does not ask for the opening, by which
+  // pre_load_scene knows a new file from the file select: it knows one by the file just read. Keep in step
+  // with pre_load_scene's BT_MAP_CUTSCENE_OPENING
+  if (door_direct_new_file()) main.new_file = 1;
   if (main.new_file) {
     main.new_file = 0;
     ap_new_file();
@@ -728,6 +743,8 @@ u8 main_bt_file_select_cursor(bt_obj_file_select_ctx_t* ctx, u8 operation, u8 se
         case 2:
           switch (ctx->cursor_state) {
             case 0x04: // normal
+              // BKBT: a door arrival's direct load from the title chooses a file without the file select and
+              // does what this case does itself (door.c, door_direct_choose): keep the two in step
               u32 pc_seed = ap_memory.pc.settings.seed;
               u32* n64_seed = &save_data.custom[selected].seed;
               if (pc_seed == 0 || (pc_seed != *n64_seed && *n64_seed != 0)) {
@@ -745,6 +762,10 @@ u8 main_bt_file_select_cursor(bt_obj_file_select_ctx_t* ctx, u8 operation, u8 se
                 u8* from = (u8*)&(save_data.custom[ctx->selection1]);
                 u8* to = (u8*)&(save_data.custom[ctx->selection2]);
                 for (int i = 0; i < sizeof(save_data.custom[ctx->selection2]); i++) to[i] = from[i];
+                // BKBT: a copy gets no link (save.h): its first trip through the hub door starts a new
+                // Banjo-Kazooie game (the owner's decision, 2026-11-02). Plain stores only in this hook (door.c)
+                save_data.link[ctx->selection2] = 0;
+                save_dirty = 1;
               }
               break;
             case 0x10: // delete
@@ -753,6 +774,10 @@ u8 main_bt_file_select_cursor(bt_obj_file_select_ctx_t* ctx, u8 operation, u8 se
                 // delete custom save data
                 u8* data = (u8*)&(save_data.custom[ctx->selection1]);
                 for (int i = 0; i < sizeof(save_data.custom[ctx->selection1]); i++) data[i] = 0;
+                // BKBT: an erased file holds no link any more (save.h), so its Banjo-Kazooie save may be
+                // reused. Plain stores only in this hook (door.c)
+                save_data.link[ctx->selection1] = 0;
+                save_dirty = 1;
               }
               break;
           }

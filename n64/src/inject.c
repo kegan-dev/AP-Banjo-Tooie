@@ -151,6 +151,7 @@ u32 inject_hooks() {
   ap_memory.pc.settings.dialog_character = 110;
   AP_MEMORY_PTR = &ap_memory_ptrs;
   dualboot_boot_check();  // after the anchor is published so memory probes can attach
+  door_hooks();           // BKBT: the hub door's curtain (door.c), after the boot check has seen an arrival
 
   // replace game's init function
   util_inject(UTIL_INJECT_FUNCTION, 0x800124F4, (u32)inject_init, 0);

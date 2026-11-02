@@ -14,7 +14,7 @@
    refuses a ROM in which it differs from the tag. Change both. The Banjo-Kazooie payload (its header,
    hack/bk/asm/payload.asm in the superproject) and the Banjo-Kazooie fork (bkbt_contract,
    hack/bk/decomp in the superproject) carry the number too, and the same tool compares those. */
-#define DUALBOOT_CONTRACT 3
+#define DUALBOOT_CONTRACT 4
 
 /* Handoff block: survives a warm start in either direction (top of the payload window, never DMA'd
    over, above everything Banjo-Kazooie uses). The Banjo-Kazooie side of it is
@@ -49,7 +49,14 @@
             none; bkbt_init zeroes it. C never touches it
      +0x28  autotest: Banjo-Kazooie main-loop iterations before it returns by itself (0 = stay)
      +0x2C  flags for Banjo-Kazooie, latched by bkbt_init (BKBT_FLAG_* in the fork's bkbt.h: bit 0 =
-            L + R + Start also returns outside BK's front end) */
+            L + R + Start also returns outside BK's front end)
+     +0x30  link (contract 4): with a destination, the link of the file that goes through the door
+            (save_data.link, save.h): to Banjo-Kazooie this file's, back from it the one its save
+            carries; 0 with none. Like the destination: written through KSEG1 by the game being left on
+            every launch, read and zeroed by the game started, believed only with its proof of a launch
+     +0x34, +0x38, +0x3C  to Banjo-Kazooie with a destination: the links of this game's three files
+            (0 for none), so that it knows which of its saves no file holds any more; 0 otherwise.
+            The same rules; this line, +0x30..+0x3C, is KSEG1 only on both sides */
 #define DUALBOOT_HANDOFF ((vu32*)0x805FFF00)
 #define DUALBOOT_MAGIC 0x424B4254 /* 'BKBT' */
 #define DUALBOOT_GAME_TOOIE 1
@@ -63,6 +70,9 @@
 #define DUALBOOT_DEST_MAP (DUALBOOT_HANDOFF_UNCACHED[6])
 #define DUALBOOT_DEST_EXIT (DUALBOOT_HANDOFF_UNCACHED[7])
 #define DUALBOOT_DEST_TAG 0x44530000 /* 'DS' in the high half; the map in the low */
+/* The links (contract 4), through KSEG1 only (above): the file at the door, and the three files' links */
+#define DUALBOOT_LINK (DUALBOOT_HANDOFF_UNCACHED[12])
+#define DUALBOOT_FILE_LINK(i) (DUALBOOT_HANDOFF_UNCACHED[13 + (i)])
 
 /* The hub door (docs/ROADMAP.md in the superproject, "The way there", step 2): Spiral Mountain's entrance to
    the ruined Lair (BT_MAP_SM -> 0x0AD) leads into Banjo-Kazooie's Lair, MAP_69_GL_MM_LOBBY at
@@ -116,11 +126,15 @@ void dualboot_title_chord(u32 down); /* every title-screen frame: is L + R + Sta
 extern u8 dualboot_arrival;
 extern u16 dualboot_arrival_map;
 extern u16 dualboot_arrival_exit;
+extern u32 dualboot_arrival_link;    /* the link of the save that came back (+0x30), 0 for none */
 
 /* The hub door's code (door.c). */
 void door_pre_load_scene(u16* scene, u16* exit); /* the first thing pre_load_scene does */
 void door_arrival_scene(u16* scene, u16* exit);  /* the last thing pre_load_scene does */
 void door_pad(void);                             /* check_tiptoe, before the game polls the pads */
 void door_loop(void);                            /* post_loop */
+void door_hooks(void);                           /* inject_hooks: the curtain's two hooks */
+u8 door_direct_load(void);     /* is this load a door arrival's file loaded straight from the title? */
+u8 door_direct_new_file(void); /* post_load_save: ... and is the file it read a new one? */
 
 #endif
