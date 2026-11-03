@@ -29,7 +29,10 @@
 // and the save at the door wiped itself. The game writes a save to its spare area and then invalidates the
 // file's old one, and after a load from the title it took the area it had just written for the old one
 // (a trace of save_eeprom_write and the SRAM on mupen64plus, 2026-11-02; hack/DUALBOOT.md in the superproject,
-// "The hub door"). Through the file select the game knows where its files are. With no file to play the curtain
+// "The hub door"). Why: the save overlay (glsavegame, 0x2B4) keeps each file's area and the spare in a table at
+// 0x80127618, which only the file select fills (its object's init calls the overlay's scan, export 0) and which is
+// zeros at boot, so a save then writes area 0 and invalidates area 0 (2026-11-03; hack/DUALBOOT.md in the
+// superproject, "Why the file select"). With no file to play the curtain
 // lifts and the player chooses with A: the load that file asks for goes to the arrival instead
 // (door_arrival_scene): a new file asks (0x0A1, 0), which the hack makes (BT_MAP_SM, 4), a file played only in
 // Spiral Mountain (BT_MAP_SM, 4), one that has been to Jinjo Village (0x142, 3) (mupen64plus, 2026-10-31).
