@@ -8,28 +8,31 @@
 // Out: with the combined client's hub_door setting (shared/include/ap_memory/pc.h), Spiral Mountain's entrance to
 // the ruined Lair starts Banjo-Kazooie, to arrive in its Lair. The load the game asked for (BT_MAP_SM -> 0x0AD,
 // exit 1) is turned into Spiral Mountain again at the way out of the ruined Lair: the game saves at every scene
-// change (save_eeprom_write sets save_dirty), this one too, and the next post_loop starts BK
-// (dualboot_start_bk writes a save still pending first). mupen64plus, 2026-10-31. The file gets its link first,
+// change, this one too, inside the load and before it returns (all 56 blocks of the file and the commit, about a
+// second of the CPU's count, before the next post_loop: a trace of save_eeprom_write on mupen64plus, 2026-11-02),
+// and the next post_loop starts BK (dualboot_start_bk writes the save, still pending, first). The file gets its link first,
 // if it has none (save_data.link, save.h): the number that ties it to its Banjo-Kazooie save, which goes along
 // with the three files' links (dualboot_start_bk).
 //
 // In: a boot that came back through BK's Lair exit has an arrival (dualboot_boot_check), and the link of the save
-// it came from. Once the client's seed is there, the title loads the file of that link (else the file of the
-// client's seed, else the first file of no seed, a new game) straight into the arrival, without the file select
-// (the direct load, since 2026-11-02, the owner's request): the game's own steps of starting a file, as its file
-// select takes them (bt/misc_functions.h, the session; bt/maps.h, bt_fn_load_scene_with_save), and the hack's
-// own, which main.c takes for a file chosen in the file select and which the direct load has to take too:
+// it came from. Half a second into the title, it leaves for the file select as the title itself does. Once the
+// client's seed has been there a second, the file select loads the file of that link (else the file of the
+// client's seed, else the first file of no seed, a new game) straight into the arrival, without a press (the
+// direct load, 2026-11-02, the owner's request): the game's own steps of starting a file, as its file select
+// takes them (bt/misc_functions.h, the session; bt/maps.h, bt_fn_load_scene_with_save), and the hack's own,
+// which main.c takes for a file chosen with A and which the direct load has to take too:
 //   - choosing the file (main_bt_file_select_cursor, "select"): door_direct_choose, a copy, KEEP IN STEP;
 //   - knowing a new file (pre_load_scene's BT_MAP_CUTSCENE_OPENING, which the direct load never asks for):
 //     door_direct_new_file, by the file just read, KEEP IN STEP;
-//   - leaving the title (main_leave_title) and the rest of pre_load_scene and post_load_save: shared, since
-//     the session's slot is set before main.c looks (door_pre_load_scene), which makes the load one in game.
-// When the curtain lifts first (no client for ten seconds, or no file to play) the title leaves for the file
-// select as the title itself does, and there the hack presses for the player once the client is there
-// (door_pad, the way of every arrival from 2026-10-31 to 2026-11-02): the load that file asks for goes to the
-// arrival instead (door_arrival_scene): a new file asks (0x0A1, 0), which the hack makes (BT_MAP_SM, 4), a file
-// played only in Spiral Mountain (BT_MAP_SM, 4), one that has been to Jinjo Village (0x142, 3). All found on
-// mupen64plus on 2026-10-31.
+//   - the rest of pre_load_scene and post_load_save: shared, since this is a load from the file select.
+// From the file select, not the title: a file loaded straight from the title read as new at the next arrival,
+// and the save at the door wiped itself. The game writes a save to its spare area and then invalidates the
+// file's old one, and after a load from the title it took the area it had just written for the old one
+// (a trace of save_eeprom_write and the SRAM on mupen64plus, 2026-11-02; hack/DUALBOOT.md in the superproject,
+// "The hub door"). Through the file select the game knows where its files are. With no file to play the curtain
+// lifts and the player chooses with A: the load that file asks for goes to the arrival instead
+// (door_arrival_scene): a new file asks (0x0A1, 0), which the hack makes (BT_MAP_SM, 4), a file played only in
+// Spiral Mountain (BT_MAP_SM, 4), one that has been to Jinjo Village (0x142, 3) (mupen64plus, 2026-10-31).
 //
 // The curtain: from the moment Banjo walks through the door until he stands at the destination the picture is
 // black and the sound silent, so that the player never sees the title or the file select being worked
@@ -38,15 +41,12 @@
 // of osAiSetNextBuffer). The curtain lifts once the arrival's scene is loaded, or after ten seconds without a
 // client's seed, or when no file can be chosen: the player then sees the title or the file select as before.
 //
-// Every entry here is called from C the game reaches through its own jal (pre_load_scene, check_tiptoe,
+// Every entry here is called from C the game reaches through its own jal (pre_load_scene, post_load_save,
 // post_loop) or is a whole function the game calls (door_vi_black, door_ai_buffer): none is a hook behind the
 // *_displaced trampolines of the middle of a function (asm/displaced.asm), whose saved registers lie in the
 // argument home area of the C they call, where a callee with calls of its own spills its arguments (an added
 // call in the file select's cursor hook hung the game: 2026-10-31).
 
-// libultra's OSContPad of pad 0, the game's copy of the controller's last answer, which its controller update
-// reads (bt/controllers.h): the button word and the stick's x. A press put there before bt_fn_poll_controls
-// is taken as the player's; one put into bt_controllers after the poll is not (2026-10-31).
 // The hub_door setting sits in the padding before silo_requirements and moves nothing: the stock Tooie client
 // writes the settings at their offsets (client/game.py of the Tooie world: SILO_REQUIREMENTS_BASE 0x26), and the
 // combined client writes this byte at +0x25 (worlds/banjo_kazooie_tooie/client/bridge.py, HUB_DOOR_SETTING).
@@ -58,18 +58,12 @@ _Static_assert(DOOR_SETTING_OFFSET(green_relics_boss_requirement) == 0x57, "hub_
 // link[] comes after custom[], whose offsets the saves of earlier builds have (save.h): 0xB44 bytes before it
 _Static_assert(__builtin_offsetof(save_data_t, link) == 0xB44, "save_data's link[] moved custom[]");
 
-#define DOOR_PAD_BUTTONS (*(vu16*)0x80079B40)
-#define DOOR_PAD_STICK_X (*(vs8*)0x80079B42)
-#define DOOR_BUTTON_A 0x8000
-
 // How long the curtain waits for a client's seed before it shows the player why nothing happens
 #define DOOR_CURTAIN_WAIT_MS 10000
 
 static u8 door_leaving = 0;      // the door was taken: Banjo-Kazooie on the next post_loop
 static u16 door_title_frames = 0;
-static u16 door_seed_frames = 0; // title loops with the client's seed there
-static u8 door_to_select = 0;    // the title was sent to the file select
-static u16 door_select_frames = 0;
+static u16 door_select_frames = 0; // file select loops with the client's seed there
 static u8 door_direct = 0;       // the direct load: DOOR_DIRECT_ASKED, then DOOR_DIRECT_LOADING, 0 when done
 static u8 door_direct_slot = 0;
 #define DOOR_DIRECT_ASKED 1
@@ -164,10 +158,6 @@ static u8 door_direct_choose(u8 slot, u32 seed) {
   return 1;
 }
 
-u8 door_direct_load(void) {
-  return door_direct == DOOR_DIRECT_LOADING;
-}
-
 // post_load_save, in the direct load: whether the file just read has never been started, which the file
 // select tells by asking for the opening (main.c's pre_load_scene, BT_MAP_CUTSCENE_OPENING). KEEP THE TWO IN
 // STEP. Such a file reads with no Jinjo pattern: the intro sets it ("set after intro cutscene",
@@ -181,12 +171,12 @@ u8 door_direct_new_file(void) {
 
 void door_pre_load_scene(u16* scene, u16* exit) {
   if (door_direct == DOOR_DIRECT_ASKED) {
-    if (bt_current_map != BT_MAP_TITLE_SCREEN || *scene != dualboot_arrival_map || *exit != dualboot_arrival_exit) {
+    if (bt_current_map != BT_MAP_FILE_SELECT || *scene != dualboot_arrival_map || *exit != dualboot_arrival_exit) {
       door_direct = 0;  // another load got there first: not the file's
     } else {
       // The game's part, as its file select starts a file (bt/misc_functions.h, the session): the file the
-      // load reads, and the actions it runs once it has read it. From here on bt_save_slot is the file's and
-      // this load is one in game for main.c (BT_IN_GAME)
+      // load reads (the file select sets it for the file under its cursor), and the actions it runs once it has
+      // read it
       door_direct = DOOR_DIRECT_LOADING;
       bt_fn_session_set_slot(door_direct_slot);
       bt_fn_session_new_actions();
@@ -207,7 +197,7 @@ void door_pre_load_scene(u16* scene, u16* exit) {
 }
 
 void door_arrival_scene(u16* scene, u16* exit) {
-  if (!dualboot_arrival || (bt_current_map != BT_MAP_FILE_SELECT && door_direct != DOOR_DIRECT_LOADING)) return;
+  if (!dualboot_arrival || bt_current_map != BT_MAP_FILE_SELECT) return;
   dualboot_arrival = 0;
   *scene = dualboot_arrival_map;
   *exit = dualboot_arrival_exit;
@@ -227,44 +217,17 @@ static u8 door_target_slot(u32 seed) {
   return 0xFF;
 }
 
-void door_pad(void) {
-  if (!dualboot_arrival || bt_current_map != BT_MAP_FILE_SELECT) return;
+// The file select of an arrival: once the client's seed has been there a second (the client writes the seed and
+// then, in the same look, the items: BTClient.py, emu_loader_monitor_task), the file straight into the arrival;
+// the request comes back through pre_load_scene (door_pre_load_scene) when the game loads it, once the file
+// select has faded. With no file to play the curtain lifts and the player chooses.
+static void door_select(void) {
   u32 seed = ap_memory.pc.settings.seed;
-  // The client writes the seed and then, in the same look, the items (BTClient.py, emu_loader_monitor_task):
-  // a second is plenty. Then a press lasts two polls, one every half second, which the menu takes.
-  u32 t = door_select_frames;
-  if (!seed || t < 60 || (t - 60) % 30 >= 2) return;
-  u8 target = door_target_slot(seed);
-  if (target == 0xFF) {
-    door_curtain_lift();
-    return;
-  }
-  if (bt_save_slot != target) DOOR_PAD_STICK_X = (bt_save_slot == 0xFF || bt_save_slot < target) ? 80 : -80;
-  else DOOR_PAD_BUTTONS |= DOOR_BUTTON_A;
-}
-
-// The title of an arrival. Under the curtain, once the client's seed is there, the file straight into the
-// arrival; the request comes back through pre_load_scene (door_pre_load_scene) when the game loads it. Without
-// the curtain (no client for ten seconds, or no file to play) the file select, as the title itself goes there
-// (main.c's pre_load_scene sees the load), where door_pad presses once the client is there.
-static void door_title(void) {
-  u32 seed = ap_memory.pc.settings.seed;
-  door_title_frames++;
-  if (door_direct) return;  // asked for: the game loads it once the title has faded
-  if (!door_curtain) {
-    if (!door_to_select) {
-      door_to_select = 1;
-      bt_fn_load_scene(BT_MAP_FILE_SELECT, 0, 0);
-    }
-    return;
-  }
-  // The client writes the seed and then, in the same look, the items (BTClient.py, emu_loader_monitor_task): a
-  // second is plenty, which the presses waited too. The title has had half a second, as before.
-  door_seed_frames = seed ? door_seed_frames + 1 : 0;
-  if (door_seed_frames < 60 || door_title_frames < 30) return;
+  door_select_frames = seed ? door_select_frames + 1 : 0;
+  if (door_direct || door_select_frames < 60) return;
   u8 slot = door_target_slot(seed);
   if (slot == 0xFF || !door_direct_choose(slot, seed)) {
-    door_curtain_lift();  // nothing to play: the player chooses, in the file select from the next loop on
+    door_curtain_lift();
     return;
   }
   door_direct_slot = slot;
@@ -294,9 +257,10 @@ void door_loop(void) {
   }
   if (dualboot_arrival) {
     if (bt_current_map == BT_MAP_TITLE_SCREEN) {
-      door_title();
+      // Leave the title as the title does (main.c's pre_load_scene sees the load), half a second in
+      if (++door_title_frames == 30) bt_fn_load_scene(BT_MAP_FILE_SELECT, 0, 0);
     } else if (bt_current_map == BT_MAP_FILE_SELECT) {
-      door_select_frames = ap_memory.pc.settings.seed ? door_select_frames + 1 : 0;
+      door_select();
     }
   }
 #ifdef DUALBOOT_DOOR_TEST

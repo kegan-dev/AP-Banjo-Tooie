@@ -259,7 +259,6 @@ void post_spawn_prop(u16 id, bt_s32_xyz_t* pos, u32 yrot, bt_obj_setup_t* setup,
 
 bool check_tiptoe()
 {
-  door_pad();  // BKBT: the hub door's file choice presses through the pad word the poll reads (door.c)
   bool controls_polled = bt_fn_poll_controls();
   if(bt_controllers[0].held.dup > 0 && controls_polled)
   {
@@ -370,31 +369,25 @@ void main_visited_world(u16 scene, u16 exit) {
   }
 }
 
-// The title is left for good: the version that lets Start skip the title from the next boot on (post_init),
-// and the title's credits freed
-static void main_leave_title() {
-  save_data.version = AP_VERSION.as_int;
-  save_dirty = 1;
-  for (int i = 0; i < 2; i++) {
-    bt_zoombox_t* zb = main.zb_credits[i];
-    if (!zb) continue;
-    bt_fn_zoombox_free(zb);
-    main.zb_credits[i] = 0;
-  }
-}
-
 void pre_load_scene(u16 *scene, u16 *exit) {
   debug_load_scene(scene, exit);
-  // BKBT: the hub door (door.c), before anything sees where the load goes. A door arrival's load straight from
-  // the title (door_direct_load) chooses its file here, so that from now on the load is one of a file in play
+  // BKBT: the hub door (door.c), before anything sees where the load goes. A door arrival's direct load from the
+  // file select sets the game's file for the load here
   door_pre_load_scene(scene, exit);
   main.setup_cache_count = 0;
   if (!BT_IN_GAME && bt_current_map != BT_MAP_FILE_SELECT) {
-    if (*scene == BT_MAP_FILE_SELECT) main_leave_title();
+    if (*scene == BT_MAP_FILE_SELECT) {
+      save_data.version = AP_VERSION.as_int;
+      save_dirty = 1;
+      for (int i = 0; i < 2; i++) {
+        bt_zoombox_t* zb = main.zb_credits[i];
+        if (!zb) continue;
+        bt_fn_zoombox_free(zb);
+        main.zb_credits[i] = 0;
+      }
+    }
     return;
   }
-  // BKBT: a door arrival's load straight from the title leaves it as the way to the file select above does
-  if (door_direct_load() && bt_current_map == BT_MAP_TITLE_SCREEN) main_leave_title();
   bt_temp_flags.bubble_cutscene = 0;
   bt_flags.ccl_open = ap_memory.pc.items[AP_ITEM_CCA] > 0;
   if (bt_flags.ck_opened_gun_chamber) bt_flags.tower_of_tragedy_completed = 0;
@@ -578,9 +571,9 @@ void pre_load_save() {
 
 void post_load_save() {
   if (!BT_IN_GAME && bt_current_map != BT_MAP_FILE_SELECT) return;
-  // BKBT: a door arrival's direct load from the title (door.c) does not ask for the opening, by which
-  // pre_load_scene knows a new file from the file select: it knows one by the file just read. Keep in step
-  // with pre_load_scene's BT_MAP_CUTSCENE_OPENING
+  // BKBT: a door arrival's direct load (door.c) does not ask for the opening, by which pre_load_scene knows a
+  // new file chosen with A: it knows one by the file just read. Keep in step with pre_load_scene's
+  // BT_MAP_CUTSCENE_OPENING
   if (door_direct_new_file()) main.new_file = 1;
   if (main.new_file) {
     main.new_file = 0;
@@ -743,8 +736,8 @@ u8 main_bt_file_select_cursor(bt_obj_file_select_ctx_t* ctx, u8 operation, u8 se
         case 2:
           switch (ctx->cursor_state) {
             case 0x04: // normal
-              // BKBT: a door arrival's direct load from the title chooses a file without the file select and
-              // does what this case does itself (door.c, door_direct_choose): keep the two in step
+              // BKBT: a door arrival's direct load chooses a file without the cursor and does what this case
+              // does itself (door.c, door_direct_choose): keep the two in step
               u32 pc_seed = ap_memory.pc.settings.seed;
               u32* n64_seed = &save_data.custom[selected].seed;
               if (pc_seed == 0 || (pc_seed != *n64_seed && *n64_seed != 0)) {

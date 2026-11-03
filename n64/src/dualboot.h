@@ -131,10 +131,8 @@ extern u32 dualboot_arrival_link;    /* the link of the save that came back (+0x
 /* The hub door's code (door.c). */
 void door_pre_load_scene(u16* scene, u16* exit); /* the first thing pre_load_scene does */
 void door_arrival_scene(u16* scene, u16* exit);  /* the last thing pre_load_scene does */
-void door_pad(void);                             /* check_tiptoe, before the game polls the pads */
 void door_loop(void);                            /* post_loop */
 void door_hooks(void);                           /* inject_hooks: the curtain's two hooks */
-u8 door_direct_load(void);     /* is this load a door arrival's file loaded straight from the title? */
-u8 door_direct_new_file(void); /* post_load_save: ... and is the file it read a new one? */
+u8 door_direct_new_file(void); /* post_load_save: did a door arrival's direct load read a new file? */
 
 #endif
