@@ -37,6 +37,21 @@ typedef void (*bt_fnt_session_queue_mode)(s32 mode);
 typedef void (*bt_fnt_session_queue_random_seed)(void);
 #define bt_fn_session_queue_random_seed ((bt_fnt_session_queue_random_seed)0x800D3B24)
 
+// BKBT: the save overlay (id 0x2B4, glsavegame), through its stubs in the core at 0x80088518 + 8n for export n: a
+// stub is `syscall 0x2B4` while the overlay is not in RAM, which loads it, and `j` to its dispatcher once it is
+// (the superproject's hack/BT-BUILD.md, "How the core reaches an overlay"). It keeps the EEPROM area of each file
+// and the spare area in a table in the core's data, 0x80127618 (+0x0C..+0x0E the files' areas, +0x0F the spare),
+// which only the scan fills and which is zero at boot; its save writes a file to the spare area and invalidates the
+// file's area, its load reads the file's area. Read from RAM dumps of mupen64plus on 2026-11-03 (hack/DUALBOOT.md,
+// "Why the file select").
+//   export 0 (): the scan. Reads the four areas, fills the table, and holds a copy of each file (+0x00..+0x0B,
+//     +0x10 set). The file select's object calls it at its init (0x801AE0E4).
+//   export 1 (): frees the copies (+0x10 cleared); the table stays. The file select calls it (0x801B1700).
+typedef void (*bt_fnt_save_scan)(void);
+#define bt_fn_save_scan ((bt_fnt_save_scan)0x80088518)
+typedef void (*bt_fnt_save_free_copies)(void);
+#define bt_fn_save_free_copies ((bt_fnt_save_free_copies)0x80088520)
+
 typedef u32 (*bt_fnt_object_init)(bt_object_t*, u32, u32, u32);
 #define bt_fn_object_init ((bt_fnt_object_init)0x80082088)
 

@@ -15,27 +15,32 @@
 // with the three files' links (dualboot_start_bk).
 //
 // In: a boot that came back through BK's Lair exit has an arrival (dualboot_boot_check), and the link of the save
-// it came from. Half a second into the title, it leaves for the file select as the title itself does. Once the
-// client's seed has been there a second, the file select loads the file of that link (else the file of the
-// client's seed, else the first file of no seed, a new game) straight into the arrival, without a press (the
-// direct load, 2026-11-02, the owner's request): the game's own steps of starting a file, as its file select
-// takes them (bt/misc_functions.h, the session; bt/maps.h, bt_fn_load_scene_with_save), and the hack's own,
-// which main.c takes for a file chosen with A and which the direct load has to take too:
+// it came from. Once the client's seed has been there a second, and the title half a second, the title loads the
+// file of that link (else the file of the client's seed, else the first file of no seed, a new game) straight
+// into the arrival, without the file select (the direct load, 2026-11-02, the owner's request): the game's own
+// steps of starting a file, as its file select takes them (bt/misc_functions.h, the save overlay and the session;
+// bt/maps.h, bt_fn_load_scene_with_save), and the hack's own, which main.c takes for a file chosen with A and
+// which the direct load has to take too:
 //   - choosing the file (main_bt_file_select_cursor, "select"): door_direct_choose, a copy, KEEP IN STEP;
 //   - knowing a new file (pre_load_scene's BT_MAP_CUTSCENE_OPENING, which the direct load never asks for):
 //     door_direct_new_file, by the file just read, KEEP IN STEP;
-//   - the rest of pre_load_scene and post_load_save: shared, since this is a load from the file select.
-// From the file select, not the title: a file loaded straight from the title read as new at the next arrival,
-// and the save at the door wiped itself. The game writes a save to its spare area and then invalidates the
-// file's old one, and after a load from the title it took the area it had just written for the old one
-// (a trace of save_eeprom_write and the SRAM on mupen64plus, 2026-11-02; hack/DUALBOOT.md in the superproject,
-// "The hub door"). Why: the save overlay (glsavegame, 0x2B4) keeps each file's area and the spare in a table at
-// 0x80127618, which only the file select fills (its object's init calls the overlay's scan, export 0) and which is
-// zeros at boot, so a save then writes area 0 and invalidates area 0 (2026-11-03; hack/DUALBOOT.md in the
-// superproject, "Why the file select"). With no file to play the curtain
-// lifts and the player chooses with A: the load that file asks for goes to the arrival instead
-// (door_arrival_scene): a new file asks (0x0A1, 0), which the hack makes (BT_MAP_SM, 4), a file played only in
-// Spiral Mountain (BT_MAP_SM, 4), one that has been to Jinjo Village (0x142, 3) (mupen64plus, 2026-10-31).
+//   - leaving the title (main_leave_title) and the rest of pre_load_scene and post_load_save: shared, since the
+//     session's slot is set before main.c looks (door_pre_load_scene), which makes the load one in game.
+// The save overlay's scan first (since 2026-11-03), as the file select does when it comes up: the overlay keeps
+// each file's EEPROM area and the spare in a table that only the scan fills and that is zero at boot, and with it
+// zero the save at the door wrote area 0 and then invalidated area 0, so that the file read as new at the next
+// arrival (the owner's Cheato page that came back, 2026-11-02, when the direct load first started from the title;
+// a trace of save_eeprom_write and the table read in RAM on mupen64plus; hack/DUALBOOT.md in the superproject,
+// "Not from the title" and "Why the file select"). The copies of the files the scan holds are freed at once, as
+// the file select frees them: the table stays, as it stays after the file select. From 2026-11-02 to 2026-11-03
+// the direct load went through the file select for its scan.
+// When the curtain lifts first (no client for ten seconds, or no file to play) the title leaves for the file select
+// as the title itself does, and there, once the client's seed has been there a second, the file select loads the
+// file the same way, in sight (door_select; the file select has scanned, and must not scan again: the scan does
+// not free the copies the file select shows). With no file to play the player chooses with A: the load that file
+// asks for goes to the arrival instead (door_arrival_scene): a new file asks (0x0A1, 0), which the hack makes
+// (BT_MAP_SM, 4), a file played only in Spiral Mountain (BT_MAP_SM, 4), one that has been to Jinjo Village (0x142,
+// 3) (mupen64plus, 2026-10-31).
 //
 // The curtain: from the moment Banjo walks through the door until he stands at the destination the picture is
 // black and the sound silent, so that the player never sees the title or the file select being worked
@@ -66,6 +71,8 @@ _Static_assert(__builtin_offsetof(save_data_t, link) == 0xB44, "save_data's link
 
 static u8 door_leaving = 0;      // the door was taken: Banjo-Kazooie on the next post_loop
 static u16 door_title_frames = 0;
+static u16 door_seed_frames = 0;   // title loops with the client's seed there
+static u8 door_to_select = 0;      // the title was sent to the file select
 static u16 door_select_frames = 0; // file select loops with the client's seed there
 static u8 door_direct = 0;       // the direct load: DOOR_DIRECT_ASKED, then DOOR_DIRECT_LOADING, 0 when done
 static u8 door_direct_slot = 0;
@@ -161,6 +168,10 @@ static u8 door_direct_choose(u8 slot, u32 seed) {
   return 1;
 }
 
+u8 door_direct_load(void) {
+  return door_direct == DOOR_DIRECT_LOADING;
+}
+
 // post_load_save, in the direct load: whether the file just read has never been started, which the file
 // select tells by asking for the opening (main.c's pre_load_scene, BT_MAP_CUTSCENE_OPENING). KEEP THE TWO IN
 // STEP. Such a file reads with no Jinjo pattern: the intro sets it ("set after intro cutscene",
@@ -174,12 +185,14 @@ u8 door_direct_new_file(void) {
 
 void door_pre_load_scene(u16* scene, u16* exit) {
   if (door_direct == DOOR_DIRECT_ASKED) {
-    if (bt_current_map != BT_MAP_FILE_SELECT || *scene != dualboot_arrival_map || *exit != dualboot_arrival_exit) {
+    u8 front_end = bt_current_map == BT_MAP_TITLE_SCREEN || bt_current_map == BT_MAP_FILE_SELECT;
+    if (!front_end || *scene != dualboot_arrival_map || *exit != dualboot_arrival_exit) {
       door_direct = 0;  // another load got there first: not the file's
     } else {
       // The game's part, as its file select starts a file (bt/misc_functions.h, the session): the file the
       // load reads (the file select sets it for the file under its cursor), and the actions it runs once it has
-      // read it
+      // read it. From the title, bt_save_slot is the file's from here on and this load is one in game for
+      // main.c (BT_IN_GAME)
       door_direct = DOOR_DIRECT_LOADING;
       bt_fn_session_set_slot(door_direct_slot);
       bt_fn_session_new_actions();
@@ -200,7 +213,7 @@ void door_pre_load_scene(u16* scene, u16* exit) {
 }
 
 void door_arrival_scene(u16* scene, u16* exit) {
-  if (!dualboot_arrival || bt_current_map != BT_MAP_FILE_SELECT) return;
+  if (!dualboot_arrival || (bt_current_map != BT_MAP_FILE_SELECT && door_direct != DOOR_DIRECT_LOADING)) return;
   dualboot_arrival = 0;
   *scene = dualboot_arrival_map;
   *exit = dualboot_arrival_exit;
@@ -220,23 +233,54 @@ static u8 door_target_slot(u32 seed) {
   return 0xFF;
 }
 
-// The file select of an arrival: once the client's seed has been there a second (the client writes the seed and
-// then, in the same look, the items: BTClient.py, emu_loader_monitor_task), the file straight into the arrival;
-// the request comes back through pre_load_scene (door_pre_load_scene) when the game loads it, once the file
-// select has faded. With no file to play the curtain lifts and the player chooses.
-static void door_select(void) {
-  u32 seed = ap_memory.pc.settings.seed;
-  door_select_frames = seed ? door_select_frames + 1 : 0;
-  if (door_direct || door_select_frames < 60) return;
+// The direct load asked for: the file of door_target_slot, chosen as the file select chooses it, and the load the
+// file select asks for when it starts a file; the request comes back through pre_load_scene (door_pre_load_scene)
+// when the game loads it, once the screen has faded. From the title the save overlay's scan first, and its copies
+// freed (bt/misc_functions.h); never in the file select, which has scanned and shows its copies. With no file to
+// play the curtain lifts and the player chooses.
+static void door_direct_ask(u32 seed, u8 scan) {
   u8 slot = door_target_slot(seed);
   if (slot == 0xFF || !door_direct_choose(slot, seed)) {
     door_curtain_lift();
     return;
   }
+  if (scan) {
+    bt_fn_save_scan();
+    bt_fn_save_free_copies();
+  }
   door_direct_slot = slot;
   door_direct = DOOR_DIRECT_ASKED;
   // as the gcfrontend overlay asks for it when the file select starts a file (bt/maps.h)
   bt_fn_load_scene_with_save(dualboot_arrival_map, dualboot_arrival_exit, 1);
+}
+
+// The title of an arrival. Under the curtain, once the client's seed has been there a second (the client writes the
+// seed and then, in the same look, the items: BTClient.py, emu_loader_monitor_task) and the title half a second,
+// the file straight into the arrival. Without the curtain (no client for ten seconds, or no file to play) the file
+// select, as the title itself goes there (main.c's pre_load_scene sees the load), where door_select takes over.
+static void door_title(void) {
+  u32 seed = ap_memory.pc.settings.seed;
+  door_title_frames++;
+  if (door_direct) return;  // asked for: the game loads it once the title has faded
+  if (!door_curtain) {
+    if (!door_to_select) {
+      door_to_select = 1;
+      bt_fn_load_scene(BT_MAP_FILE_SELECT, 0, 0);
+    }
+    return;
+  }
+  door_seed_frames = seed ? door_seed_frames + 1 : 0;
+  if (door_seed_frames < 60 || door_title_frames < 30) return;
+  door_direct_ask(seed, 1);
+}
+
+// The file select of an arrival, once the curtain has lifted on the title: once the client's seed has been there a
+// second, the file straight into the arrival, in sight; with no file to play the player chooses.
+static void door_select(void) {
+  u32 seed = ap_memory.pc.settings.seed;
+  door_select_frames = seed ? door_select_frames + 1 : 0;
+  if (door_direct || door_select_frames < 60) return;
+  door_direct_ask(seed, 0);
 }
 
 void door_loop(void) {
@@ -260,8 +304,7 @@ void door_loop(void) {
   }
   if (dualboot_arrival) {
     if (bt_current_map == BT_MAP_TITLE_SCREEN) {
-      // Leave the title as the title does (main.c's pre_load_scene sees the load), half a second in
-      if (++door_title_frames == 30) bt_fn_load_scene(BT_MAP_FILE_SELECT, 0, 0);
+      door_title();
     } else if (bt_current_map == BT_MAP_FILE_SELECT) {
       door_select();
     }

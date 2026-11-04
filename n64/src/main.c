@@ -369,25 +369,31 @@ void main_visited_world(u16 scene, u16 exit) {
   }
 }
 
+// The title is left for good: the version that lets Start skip the title from the next boot on (post_init),
+// and the title's credits freed
+static void main_leave_title() {
+  save_data.version = AP_VERSION.as_int;
+  save_dirty = 1;
+  for (int i = 0; i < 2; i++) {
+    bt_zoombox_t* zb = main.zb_credits[i];
+    if (!zb) continue;
+    bt_fn_zoombox_free(zb);
+    main.zb_credits[i] = 0;
+  }
+}
+
 void pre_load_scene(u16 *scene, u16 *exit) {
   debug_load_scene(scene, exit);
-  // BKBT: the hub door (door.c), before anything sees where the load goes. A door arrival's direct load from the
-  // file select sets the game's file for the load here
+  // BKBT: the hub door (door.c), before anything sees where the load goes. A door arrival's direct load sets the
+  // game's file for the load here: from the title (door_direct_load), the load is one of a file in play from now on
   door_pre_load_scene(scene, exit);
   main.setup_cache_count = 0;
   if (!BT_IN_GAME && bt_current_map != BT_MAP_FILE_SELECT) {
-    if (*scene == BT_MAP_FILE_SELECT) {
-      save_data.version = AP_VERSION.as_int;
-      save_dirty = 1;
-      for (int i = 0; i < 2; i++) {
-        bt_zoombox_t* zb = main.zb_credits[i];
-        if (!zb) continue;
-        bt_fn_zoombox_free(zb);
-        main.zb_credits[i] = 0;
-      }
-    }
+    if (*scene == BT_MAP_FILE_SELECT) main_leave_title();
     return;
   }
+  // BKBT: a door arrival's direct load from the title leaves it as the way to the file select above does
+  if (door_direct_load() && bt_current_map == BT_MAP_TITLE_SCREEN) main_leave_title();
   bt_temp_flags.bubble_cutscene = 0;
   bt_flags.ccl_open = ap_memory.pc.items[AP_ITEM_CCA] > 0;
   if (bt_flags.ck_opened_gun_chamber) bt_flags.tower_of_tragedy_completed = 0;
