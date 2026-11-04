@@ -51,9 +51,9 @@
 //
 // Every entry here is called from C the game reaches through its own jal (pre_load_scene, post_load_save,
 // post_loop) or is a whole function the game calls (door_vi_black, door_ai_buffer): none is a hook behind the
-// *_displaced trampolines of the middle of a function (asm/displaced.asm), whose saved registers lie in the
-// argument home area of the C they call, where a callee with calls of its own spills its arguments (an added
-// call in the file select's cursor hook hung the game: 2026-10-31).
+// *_displaced trampolines of the middle of a function (asm/displaced.asm), whose saved registers lay in the
+// argument home area of the C they call until 2026-11-03 (an added call in the file select's cursor hook hung the
+// game, 2026-10-31; the nest hook's froze ares: the header of asm/displaced.asm).
 
 // The hub_door setting sits in the padding before silo_requirements and moves nothing: the stock Tooie client
 // writes the settings at their offsets (client/game.py of the Tooie world: SILO_REQUIREMENTS_BASE 0x26), and the
