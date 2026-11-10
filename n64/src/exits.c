@@ -1,6 +1,7 @@
 #include "exits.h"
 #include "save.h"
 #include "ap.h"
+#include "dualboot.h"
 #include <string.h>
 
 char* exits_item_names(int id) {
@@ -70,6 +71,13 @@ u32 exits_can_pass(u16* scene, u16* exit, u16* current_map) {
     if (!mapping->on_map) break;
     if (mapping->on_map != *current_map) continue;
     if (mapping->og_map == *scene && mapping->og_exit == *exit) {
+      // BKBT: an entry into Banjo-Kazooie (the doors between the games, door.c). The load goes ahead as the game
+      // asked for it, behind the guard's own transform and split-up check, and door.c turns it into the trip.
+      // Without a Banjo-Kazooie in the ROM the entry is passed over: the load stays the game's own.
+      if (ap_memory.pc.exit_game[i].to_game == AP_MEMORY_EXIT_GAME_BK) {
+        if (!door_cross_pass(mapping, &ap_memory.pc.exit_game[i])) goto end_loop;
+        return bt_player_chars.control_type == BT_PLAYER_CHAR_BREEGULL_BLASTER ? ALLOW : PARTIAL_ALLOW;
+      }
       switch ((*scene << 8) | *exit) {
         case (BT_MAP_TDL                     << 8) | 20:
         case (BT_MAP_TDL_TERRYS_NEST         << 8) |  2:

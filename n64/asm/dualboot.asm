@@ -29,7 +29,7 @@
 ; src/dualboot.h), which no build step can compare with this one; C publishes it as the fourth word of
 ; its BKBTAUTO record (src/dualboot.c) and the image builder refuses a ROM in which the two differ.
 ; Change both.
-DUALBOOT_CONTRACT equ 4
+DUALBOOT_CONTRACT equ 5
 ; what the launcher leaves at handoff + 0x20 for Banjo-Kazooie on every launch: 'B','K','G',contract
 DUALBOOT_TOKEN equ (0x424B4700 | DUALBOOT_CONTRACT)
 

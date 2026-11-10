@@ -2,7 +2,9 @@
 #include "dma.h"
 #include "save.h"
 
-#if defined(DUALBOOT_DOOR_TEST)
+#if defined(DUALBOOT_DOOR_TEST) && defined(DUALBOOT_CROSS_TEST)
+#define DUALBOOT_AUTOTEST_ON 3
+#elif defined(DUALBOOT_DOOR_TEST)
 #define DUALBOOT_AUTOTEST_ON 2
 #elif defined(DUALBOOT_AUTOTEST)
 #define DUALBOOT_AUTOTEST_ON 1
@@ -21,7 +23,7 @@
 // no string literal can put a second copy of it into the ROM.
 const struct {
   char tag[8];
-  u32 autotest;   // 1 = built with -DDUALBOOT_AUTOTEST, 2 = with -DDUALBOOT_DOOR_TEST
+  u32 autotest;   // 1 = built with -DDUALBOOT_AUTOTEST, 2 = with -DDUALBOOT_DOOR_TEST, 3 = and -DDUALBOOT_CROSS_TEST
   u32 trips;      // DUALBOOT_AUTOTEST_TRIPS
   u32 bk_return;  // DUALBOOT_AUTOTEST_RETURN
   u32 contract;   // DUALBOOT_CONTRACT, the C copy

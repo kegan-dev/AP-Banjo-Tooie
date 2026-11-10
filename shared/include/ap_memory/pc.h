@@ -14,6 +14,19 @@ typedef struct {
   u8 access_rules[6];
 } ap_memory_pc_exit_map_t;
 
+// BKBT: the game each exit_map entry leads into, entry by entry (the doors between the games, n64/src/door.c).
+// After exit_map, so that nothing the stock client writes moves: the client finds it at the anchor's exit map
+// + 0x372 (AP_MEMORY_EXIT_MAP_MAX * 14), and only the combined Banjo-Kazooie & Tooie client writes it
+// (worlds/banjo_kazooie_tooie/client/bridge.py in the superproject). to_game 0 is this game (the stock client
+// leaves it 0); AP_MEMORY_EXIT_GAME_BK is Banjo-Kazooie, at the entry's to_map and to_exit in its numbering.
+// stay_exit is the exit of the map Banjo is in where the game reloads it before it leaves, so that the file is
+// saved there: the spot the door's way back arrives at.
+#define AP_MEMORY_EXIT_GAME_BK 1
+typedef struct {
+  u8 to_game;
+  u8 stay_exit;
+} ap_memory_pc_exit_game_t;
+
 typedef struct {
   struct {
     u8 death_link_us; // if != n64.death_link_us, send death link and increment
@@ -72,6 +85,7 @@ typedef struct {
   u8 items[AP_ITEM_MAX];
   u8 traps[AP_TRAP_MAX];
   ap_memory_pc_exit_map_t exit_map[AP_MEMORY_EXIT_MAP_MAX];
+  ap_memory_pc_exit_game_t exit_game[AP_MEMORY_EXIT_MAP_MAX];  // BKBT: above
 } ap_memory_pc_t;
 
 #endif // AP_MEMORY_PC_H

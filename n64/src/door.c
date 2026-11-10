@@ -2,8 +2,10 @@
 #include "save.h"
 #include "dma.h"
 #include "bt.h"
+#include "exits.h"
 
-// BKBT: the hub door (dual-boot contract 4; dualboot.h, docs/ROADMAP.md in the superproject, step 2).
+// BKBT: the doors. The hub door (dual-boot contract 4; dualboot.h, docs/ROADMAP.md in the superproject, step 2),
+// and since contract 5 the doors between the games (below).
 //
 // Out: with the combined client's hub_door setting (shared/include/ap_memory/pc.h), Spiral Mountain's entrance to
 // the ruined Lair starts Banjo-Kazooie, to arrive in its Lair. The load the game asked for (BT_MAP_SM -> 0x0AD,
@@ -42,6 +44,17 @@
 // (BT_MAP_SM, 4), a file played only in Spiral Mountain (BT_MAP_SM, 4), one that has been to Jinjo Village (0x142,
 // 3) (mupen64plus, 2026-10-31).
 //
+// The doors between the games (contract 5, 2026-11-07; docs/ROADMAP.md in the superproject, "Entrances shuffled
+// across the games"): an exit_map entry whose exit_game says Banjo-Kazooie (shared/include/ap_memory/pc.h), which
+// only the combined client writes, is a door into it: an Isle o' Hags world entrance whose world is one of BK's, or
+// the way out of a Tooie world that is behind one of the doors of BK's Lair. exits_can_pass (exits.c) finds it in the
+// exit guard and leaves the load as the game asked for it, so that the guard's own check still refuses a form or a
+// split-up pair (the Tooie hack's rule: a form leaves a world only by a backdoor, and backdoors are not shuffled);
+// door_cross_pass keeps it, and the load the guard then asks for becomes the map Banjo is in again, at the entry's
+// stay exit (the spot this door's way back arrives at), which saves the file, as the hub door's load does. The next
+// post_loop starts BK at the entry's destination. Every other load forgets the door, so that a guard that refused
+// sends nobody later. The way back is BK's: the destination it gives is the spot by the door that was used.
+//
 // The curtain: from the moment Banjo walks through the door until he stands at the destination the picture is
 // black and the sound silent, so that the player never sees the title or the file select being worked
 // (the owner's wish, 2026-11-02). The game's own osViBlack is held at black (door_vi_black replaces its entry)
@@ -66,10 +79,24 @@ _Static_assert(DOOR_SETTING_OFFSET(green_relics_boss_requirement) == 0x57, "hub_
 // link[] comes after custom[], whose offsets the saves of earlier builds have (save.h): 0xB44 bytes before it
 _Static_assert(__builtin_offsetof(save_data_t, link) == 0xB44, "save_data's link[] moved custom[]");
 
+// exit_game, which the combined client finds at the exit map + 0x372 (shared/include/ap_memory/pc.h)
+_Static_assert(__builtin_offsetof(ap_memory_pc_t, exit_game) - __builtin_offsetof(ap_memory_pc_t, exit_map) == 0x372,
+               "exit_game is not at exit_map + 0x372");
+
 // How long the curtain waits for a client's seed before it shows the player why nothing happens
 #define DOOR_CURTAIN_WAIT_MS 10000
 
-static u8 door_leaving = 0;      // the door was taken: Banjo-Kazooie on the next post_loop
+static u8 door_leaving = 0;      // a door was taken: Banjo-Kazooie on the next post_loop...
+static u16 door_dest_map = 0;    // ... at this destination, in its numbering
+static u16 door_dest_exit = 0;
+// The door between the games exits_can_pass found (door_cross_pass), kept for the load its guard asks for next
+static u8 door_cross = 0;
+static u16 door_cross_on_map = 0;
+static u16 door_cross_og_map = 0;
+static u8 door_cross_og_exit = 0;
+static u16 door_cross_to_map = 0;
+static u8 door_cross_to_exit = 0;
+static u8 door_cross_stay = 0;
 static u16 door_title_frames = 0;
 static u16 door_seed_frames = 0;   // title loops with the client's seed there
 static u8 door_to_select = 0;      // the title was sent to the file select
@@ -85,20 +112,29 @@ static u32 door_last_count = 0;
 #ifdef DUALBOOT_DOOR_TEST
 static u16 door_test_frames = 0;
 #endif
+#ifdef DUALBOOT_CROSS_TEST
+static u16 door_cross_test_frames = 0;
+#endif
 
 // Where the door's state is, for the superproject's check tool (tools/dualboot_door_check.py): the eight bytes
 // BKBTDOOR, once in the ROM, followed by the KSEG0 addresses of dualboot_arrival_link (u32; the check writes it on
-// a test build's first boot, which arrives with no save behind it, to stand in for one) and of door_curtain (u8).
+// a test build's first boot, which arrives with no save behind it, to stand in for one), of door_curtain (u8), and
+// since contract 5 of dualboot_arrival_map and dualboot_arrival_exit (u16; the check's cross scenarios write them on
+// that first boot, to arrive elsewhere than in Spiral Mountain).
 // Nothing in the hack reads the record (see the BKBTAUTO record in dualboot.c for how it stays in the ROM and why
 // the tag is spelled out).
 const struct {
   char tag[8];
   u32* link;
   u8* curtain;
+  u16* arrival_map;
+  u16* arrival_exit;
 } door_tag __attribute__((used)) = {
   {'B', 'K', 'B', 'T', 'D', 'O', 'O', 'R'},
   &dualboot_arrival_link,
-  &door_curtain
+  &door_curtain,
+  &dualboot_arrival_map,
+  &dualboot_arrival_exit
 };
 
 // osViBlack's own code from its third instruction on: its first two (`addiu sp, sp, -0x18`, `sw ra, 0x14(sp)`)
@@ -157,6 +193,33 @@ static u32 door_new_link(void) {
   }
 }
 
+// A door taken, the hub door or one between the games: the load that saves the file goes on, and the next post_loop
+// starts Banjo-Kazooie at (map, exit). The file gets its link first, if it has none, and the curtain falls.
+static void door_leave(u16 map, u16 exit) {
+  door_leaving = 1;
+  door_dest_map = map;
+  door_dest_exit = exit;
+  if (bt_save_slot <= 2 && save_data.link[bt_save_slot] == 0) {
+    save_data.link[bt_save_slot] = door_new_link();
+    save_dirty = 1;
+  }
+  door_curtain_raise();
+}
+
+// exits_can_pass, at an exit_map entry into Banjo-Kazooie: kept for the load the guard asks for next
+// (door_pre_load_scene); 0 when the ROM has no Banjo-Kazooie, and the entry is passed over
+u8 door_cross_pass(const ap_memory_pc_exit_map_t* entry, const ap_memory_pc_exit_game_t* game) {
+  if (!dualboot_bk_present()) return 0;
+  door_cross = 1;
+  door_cross_on_map = entry->on_map;
+  door_cross_og_map = entry->og_map;
+  door_cross_og_exit = entry->og_exit;
+  door_cross_to_map = entry->to_map;
+  door_cross_to_exit = entry->to_exit;
+  door_cross_stay = game->stay_exit;
+  return 1;
+}
+
 // The file select's part of choosing a file, for the direct load: a copy of main_bt_file_select_cursor's
 // "select" in its normal cursor state (main.c), which the direct load cannot reach. KEEP THE TWO IN STEP. It
 // refuses a file of another seed, and any file without a client, and binds the file to the client's seed.
@@ -200,16 +263,22 @@ void door_pre_load_scene(u16* scene, u16* exit) {
       bt_fn_session_queue_random_seed();
     }
   }
+  // A door between the games (door_cross_pass): the load its guard asked for, from the entry's map, becomes this map
+  // again at the entry's stay exit, a load that saves; any other load forgets the door
+  if (door_cross) {
+    door_cross = 0;
+    if (bt_current_map == door_cross_on_map && *scene == door_cross_og_map && *exit == door_cross_og_exit) {
+      *scene = bt_current_map;
+      *exit = door_cross_stay;
+      door_leave(door_cross_to_map, door_cross_to_exit);
+      return;
+    }
+  }
   if (bt_current_map != BT_MAP_SM || *scene != BT_MAP_0x0AD) return;
   if (!ap_memory.pc.settings.hub_door || !dualboot_bk_present()) return;
   *scene = BT_MAP_SM;
   *exit = DUALBOOT_DOOR_TOOIE_EXIT;
-  door_leaving = 1;
-  if (bt_save_slot <= 2 && save_data.link[bt_save_slot] == 0) {
-    save_data.link[bt_save_slot] = door_new_link();
-    save_dirty = 1;
-  }
-  door_curtain_raise();
+  door_leave(DUALBOOT_DOOR_BK_MAP, DUALBOOT_DOOR_BK_EXIT);
 }
 
 void door_arrival_scene(u16* scene, u16* exit) {
@@ -286,7 +355,7 @@ static void door_select(void) {
 void door_loop(void) {
   if (door_leaving) {
     door_leaving = 0;
-    dualboot_request_bk_to(DUALBOOT_DOOR_BK_MAP, DUALBOOT_DOOR_BK_EXIT);  // returns only without a BK
+    dualboot_request_bk_to(door_dest_map, door_dest_exit);  // returns only without a BK
     door_curtain_lift();
   }
   u32 count = C0_COUNT();
@@ -315,6 +384,27 @@ void door_loop(void) {
     if (++door_test_frames == DUALBOOT_DOOR_TEST) bt_fn_load_scene(BT_MAP_0x0AD, 1, 0);
   } else {
     door_test_frames = 0;
+  }
+#endif
+#ifdef DUALBOOT_CROSS_TEST
+  // test build: n frames in a map with an exit_map entry into Banjo-Kazooie, then through the first such entry as its
+  // exit guard sends Banjo: exits_can_pass, and the load it leaves as asked
+  int cross = -1;
+  if (BT_IN_GAME && !dualboot_arrival && !door_leaving && DUALBOOT_BK_LAUNCHES < DUALBOOT_AUTOTEST_TRIPS) {
+    for (int i = 0; i < AP_MEMORY_EXIT_MAP_MAX && ap_memory.pc.exit_map[i].on_map; i++) {
+      if (ap_memory.pc.exit_map[i].on_map == bt_current_map &&
+          ap_memory.pc.exit_game[i].to_game == AP_MEMORY_EXIT_GAME_BK) {
+        cross = i;
+        break;
+      }
+    }
+  }
+  if (cross < 0) {
+    door_cross_test_frames = 0;
+  } else if (++door_cross_test_frames == DUALBOOT_CROSS_TEST) {
+    u16 scene = ap_memory.pc.exit_map[cross].og_map;
+    u16 exit = ap_memory.pc.exit_map[cross].og_exit;
+    if (exits_can_pass(&scene, &exit, 0)) bt_fn_load_scene(scene, exit, 0);
   }
 #endif
 }

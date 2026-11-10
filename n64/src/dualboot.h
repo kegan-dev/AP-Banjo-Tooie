@@ -14,7 +14,7 @@
    refuses a ROM in which it differs from the tag. Change both. The Banjo-Kazooie payload (its header,
    hack/bk/asm/payload.asm in the superproject) and the Banjo-Kazooie fork (bkbt_contract,
    hack/bk/decomp in the superproject) carry the number too, and the same tool compares those. */
-#define DUALBOOT_CONTRACT 4
+#define DUALBOOT_CONTRACT 5
 
 /* Handoff block: survives a warm start in either direction (top of the payload window, never DMA'd
    over, above everything Banjo-Kazooie uses). The Banjo-Kazooie side of it is
@@ -101,8 +101,11 @@
                                     game is sent through it; with DUALBOOT_BK_FLAGS bit 1 BK takes its
                                     Lair exit DUALBOOT_AUTOTEST_RETURN iterations after it is in the Lair;
                                     at most DUALBOOT_AUTOTEST_TRIPS trips per cold boot
+     -DDUALBOOT_CROSS_TEST=n        with DUALBOOT_DOOR_TEST: n frames after Banjo is in a map with an exit_map
+                                    entry into Banjo-Kazooie, the game takes it as that entry's exit guard would
+                                    (door.c), within the same trips
    The first three are published in the ROM for the tools (the BKBTAUTO record in dualboot.c; a door test
-   build says autotest 2). */
+   build says autotest 2, a cross test build 3). */
 #ifndef DUALBOOT_AUTOTEST_TRIPS
 #define DUALBOOT_AUTOTEST_TRIPS 1
 #endif
@@ -128,7 +131,11 @@ extern u16 dualboot_arrival_map;
 extern u16 dualboot_arrival_exit;
 extern u32 dualboot_arrival_link;    /* the link of the save that came back (+0x30), 0 for none */
 
-/* The hub door's code (door.c). */
+/* The doors' code (door.c): the hub door, and since contract 5 the doors between the games, exit_map entries whose
+   exit_game says Banjo-Kazooie (shared/include/ap_memory/pc.h). exits_can_pass hands such an entry to
+   door_cross_pass, which keeps it for the load the guard then asks for, and says 0 when there is no Banjo-Kazooie
+   to go to. */
+u8 door_cross_pass(const ap_memory_pc_exit_map_t* entry, const ap_memory_pc_exit_game_t* game);
 void door_pre_load_scene(u16* scene, u16* exit); /* the first thing pre_load_scene does */
 void door_arrival_scene(u16* scene, u16* exit);  /* the last thing pre_load_scene does */
 void door_loop(void);                            /* post_loop */
