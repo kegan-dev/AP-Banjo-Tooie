@@ -26,7 +26,22 @@ struct main_credit_lines_t {
   {.icon=BT_ZOOMBOX_ICON_CANARY_MARY, .name="UNALIVE..."},
   {.icon=BT_ZOOMBOX_ICON_GRUNTY, .name="DARDY..."},
   {.icon=BT_ZOOMBOX_ICON_SAFE, .name="OZONE AND MIASCHEMES..."},
+  // BKBT: the owner of the Banjo-Kazooie & Tooie world (2026-11-12), with Mumbo, Banjo-Kazooie's
+  {.icon=BT_ZOOMBOX_ICON_MUMBO, .name="SPECIALK..."},
   {.icon=BT_ZOOMBOX_ICON_WELDAR, .name="AND JJJJ12212   "},
+};
+
+// BKBT: the combined world's version, which the title draws in the corner where upstream draws this hack's own
+// (AP_VERSION, left as it is: the save's title skip and Tooie's client check that one). The superproject's
+// tools/make_patches.py finds it in the ROM by its tag and refuses an image whose version is not the combined
+// world's archipelago.json world_version. The tag is spelled out, as door.c's BKBTDOOR record is, so that the
+// eight bytes are in the ROM once (2026-11-12).
+const struct {
+  char tag[8];
+  char text[12];
+} bkbt_version __attribute__((used)) = {
+  {'B', 'K', 'B', 'T', 'V', 'E', 'R', 'S'},
+  "V0.1.0"
 };
 
 void pre_init() {
@@ -78,24 +93,11 @@ void post_draw_hud(bt_draw_ctx_t* draw_ctx) {
     // never fired), so either counts. The held bits, not the pressed ones: dualboot_title_chord does its
     // own arming, because pressed is an edge against state that every boot empties (dualboot.c).
     dualboot_title_chord(bt_controllers[0].held.l && bt_controllers[0].held.r && (bt_controllers[0].held.start || bt_controllers[0].held.reset));
-    char version[10] = "V";
-    char major[3];
-    char minor[3];
-    char patch[3];
-    itoa(AP_VERSION_MAJOR, major, 10);
-    itoa(AP_VERSION_MINOR, minor, 10);
-    itoa(AP_VERSION_PATCH, patch, 10);
-    strcat(version, major);
-    strcat(version, ".");
-    strcat(version, minor);
-    if (AP_VERSION_PATCH) {
-      strcat(version, ".");
-      strcat(version, patch);
-    }
+    // BKBT: the combined world's version (bkbt_version above), not this hack's AP_VERSION
     bt_fn_text_reset_options();
     bt_text_options.appearance = BT_TEXT_TEXTURE_GOLD;
     bt_text_options.size = 0.70;
-    bt_fn_text_big_draw(draw_ctx, 20, 215, version);
+    bt_fn_text_big_draw(draw_ctx, 20, 215, (char*)bkbt_version.text);
     for (int i = 0; i < 2; i++) {
       bt_zoombox_t* zb = main.zb_credits[i];
       if (!zb) continue;
