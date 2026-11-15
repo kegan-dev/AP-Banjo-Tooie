@@ -104,6 +104,9 @@
      -DDUALBOOT_CROSS_TEST=n        with DUALBOOT_DOOR_TEST: n frames after Banjo is in a map with an exit_map
                                     entry into Banjo-Kazooie, the game takes it as that entry's exit guard would
                                     (door.c), within the same trips
+     -DDUALBOOT_CHEATO_TEST=n       with DUALBOOT_DOOR_TEST: the spawns of each map in a record for the check
+                                    (BKBTCHTO, cheato.c), n frames after Cheato is spawned in the throne room Banjo
+                                    is moved next to him, and the check's reload byte loads the throne room again
    The first three are published in the ROM for the tools (the BKBTAUTO record in dualboot.c; a door test
    build says autotest 2, a cross test build 3). */
 #ifndef DUALBOOT_AUTOTEST_TRIPS

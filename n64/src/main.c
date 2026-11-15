@@ -8,6 +8,7 @@
 #include "custom_flags/all.h"
 #include "debug/debug.h"
 #include "dualboot.h"
+#include "cheato.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -171,6 +172,7 @@ void post_draw_hud(bt_draw_ctx_t* draw_ctx) {
 }
 
 void pre_spawn_prop(u16* id, bt_s32_xyz_t* pos, u32* yrot, bt_obj_setup_t* setup) {
+  cheato_pre_spawn_prop(*id, pos, *yrot, setup);   // BKBT: Cheato in the throne room (cheato.c)
   if (!BT_IN_GAME) return;
   switch (*id) {
     case 0x01CA: // ice egg nest
@@ -244,6 +246,7 @@ void pre_spawn_prop(u16* id, bt_s32_xyz_t* pos, u32* yrot, bt_obj_setup_t* setup
 
 void post_spawn_prop(u16 id, bt_s32_xyz_t* pos, u32 yrot, bt_obj_setup_t* setup, bt_obj_instance_t* obj) {
   debug_spawn_prop(id, pos, yrot, setup, obj);
+  cheato_post_spawn_prop(setup, obj);   // BKBT: Cheato in the throne room (cheato.c)
   if (!obj || !BT_IN_GAME) return;
   if (setup && main.setup_cache_count < sizeof(setup_cache)/sizeof(*setup_cache)) setup_cache[main.setup_cache_count++] = *setup;
   switch (id) {
@@ -288,6 +291,7 @@ void post_loop() {
   { static u32 title_frames = 0; if (bt_current_map == BT_MAP_TITLE_SCREEN && ++title_frames == 240 && DUALBOOT_BK_LAUNCHES < DUALBOOT_AUTOTEST_TRIPS) dualboot_request_bk(); }
 #endif
   door_loop();  // BKBT: the hub door (door.c)
+  cheato_loop();  // BKBT: Cheato in the throne room (cheato.c)
   if (BT_IN_GAME) ap_check();
   if (bt_current_map != ap_memory.n64.misc.current_map) {
     ap_memory.n64.misc.current_map = bt_current_map;
@@ -389,6 +393,7 @@ void pre_load_scene(u16 *scene, u16 *exit) {
   // BKBT: the hub door (door.c), before anything sees where the load goes. A door arrival's direct load sets the
   // game's file for the load here: from the title (door_direct_load), the load is one of a file in play from now on
   door_pre_load_scene(scene, exit);
+  cheato_load_scene();  // BKBT: Cheato in the throne room (cheato.c)
   main.setup_cache_count = 0;
   if (!BT_IN_GAME && bt_current_map != BT_MAP_FILE_SELECT) {
     if (*scene == BT_MAP_FILE_SELECT) main_leave_title();
@@ -973,6 +978,7 @@ bool main_warp_silo_failed(bt_obj_instance_t* obj, int _unused1, int _unused2) {
 }
 
 void pre_object_init(bt_object_t *obj) {
+  cheato_object_init(obj);  // BKBT: Cheato in the throne room (cheato.c)
   if (!BT_IN_GAME && bt_current_map != BT_MAP_FILE_SELECT) return;
   switch (obj->objType) {
     case BT_OBJ_PAGE:
