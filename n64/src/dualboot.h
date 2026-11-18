@@ -84,8 +84,8 @@
 #define DUALBOOT_DOOR_TOOIE_EXIT 2
 
 /* The save device is shared too: the cartridge's 32 KiB of SRAM (cart address 0x08000000). This hack keeps
-   save_data at offset 0 (save.c). Banjo-Kazooie, when the launcher started it, keeps its 512 bytes of save
-   from this offset on, so this hack must never read, write or clear SRAM from here up; save.c stops the
+   save_data at offset 0 (save.c). Banjo-Kazooie keeps its save, 0x4E0 bytes (four game records and the global
+   one), from this offset on, so this hack must never read, write or clear SRAM from here up; save.c stops the
    build if save_data would reach it. The fork's copy of the number is bkbt_sram_offset in
    hack/bk/decomp/manual_syms.us.v10.txt in the superproject, whose link stops below 0x7000. Nothing
    compares the two: change both. */
